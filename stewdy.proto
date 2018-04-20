@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package stewdy;
+
+message campaign {
+    string id = 1;
+    string queueID = 2;
+    bool isActive = 3;
+    bool resetOnNewSchedule = 4;
+    bool resetOnActivation = 5;
+    int32 maxAttempts = 6;
+    int64 nextAttemptDelay = 7;
+    int32 concurrentCalls = 8;
+    int32 multiplier = 9;
+    int32 batchSize = 10;
+    int32 intensity = 11;
+    repeated schedule timeTable = 14;
+    string currentScheduleID = 15;
+}
+
+message schedule {
+    string id = 1;
+	int32 weekday = 2;
+	int32 start = 3;
+	int32 stop = 4;
+}
+
+message target {
+    string id = 1;
+    string campaignID = 2;
+    string phoneNumber = 3;
+    string clientId = 4;
+    string preferredOperatorID = 5;
+    int32 attempts = 6;
+    int64 lastAttemptTime = 7;
+    int64 nextAttemptTime = 8;
+    string uniqueId = 9;
+}
