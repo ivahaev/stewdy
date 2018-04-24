@@ -1,4 +1,4 @@
-//go:generate stringer -type=Event
+//go:generate stringer -type=TargetEvent
 package stewdy
 
 import (
@@ -7,24 +7,24 @@ import (
 )
 
 var (
-	eventHandlers       = map[Event][]EventHandler{}
+	eventHandlers       = map[TargetEvent][]EventHandler{}
 	eventHandlersLocker sync.RWMutex
 )
 
 // EventHandler is a hook func to handle target's events.
 type EventHandler func(t Target)
 
-// Event is a type for target's events types.
-type Event int
+// TargetEvent is a type for target's events types.
+type TargetEvent int
 
 const (
-	Originate Event = iota + 1
-	Answer
-	Connect
-	Fail
+	EventOriginate TargetEvent = iota + 1
+	EventAnswer
+	EventConnect
+	EventFail
 )
 
-func On(e Event, f EventHandler) {
+func On(e TargetEvent, f EventHandler) {
 	eventHandlersLocker.Lock()
 	defer eventHandlersLocker.Unlock()
 
@@ -44,7 +44,7 @@ func On(e Event, f EventHandler) {
 	eventHandlers[e] = append(hs, f)
 }
 
-func emit(e Event, t Target) {
+func emit(e TargetEvent, t Target) {
 	eventHandlersLocker.RLock()
 	defer eventHandlersLocker.RUnlock()
 

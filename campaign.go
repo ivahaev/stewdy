@@ -111,7 +111,7 @@ func (c campaign) failedIDs(ids []string) {
 
 		delete(c.active, id)
 		if t.Attempts >= c.c.GetMaxAttempts() {
-			go emit(Fail, *t)
+			go emit(EventFail, *t)
 			continue
 		}
 
