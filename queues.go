@@ -13,16 +13,18 @@ type queue struct {
 	queued int
 }
 
+// SetQueueStat updates internal statistic of call queue.
+// Takes queue id, number of free operators and number of queued calls as arguments.
 func SetQueueStat(id string, free, queued int) {
 	queuesLocker.Lock()
-	queuesLocker.Unlock()
+	defer queuesLocker.Unlock()
 
 	queues[id] = queue{id: id, free: free, queued: queued}
 }
 
 func queueStat(id string) (free, queued int) {
 	queuesLocker.RLock()
-	queuesLocker.RUnlock()
+	defer queuesLocker.RUnlock()
 
 	q, ok := queues[id]
 	if !ok {

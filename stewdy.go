@@ -24,6 +24,19 @@ const (
 	EventFail
 )
 
+// Answered marks target as answered and sets uniqueID field.
+func Answered(campaignID, targetID, uniqueID string) error {
+	return answered(campaignID, targetID, uniqueID)
+}
+
+func Connected(campaignID, uniqueID, operatorID string) error {
+	return connected(campaignID, uniqueID, operatorID)
+}
+
+func Failed(campaignID, targetID string) error {
+	return failed(campaignID, targetID)
+}
+
 func On(e TargetEvent, f EventHandler) {
 	eventHandlersLocker.Lock()
 	defer eventHandlersLocker.Unlock()
@@ -33,6 +46,7 @@ func On(e TargetEvent, f EventHandler) {
 		hs = []EventHandler{}
 	}
 
+	// dirty hack to comppare addresses of funcs
 	f1 := fmt.Sprintf("%p", f)
 	for _, v := range hs {
 		f2 := fmt.Sprintf("%p", v)

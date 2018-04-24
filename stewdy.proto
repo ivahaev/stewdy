@@ -35,4 +35,6 @@ message target {
     int64 lastAttemptTime = 7;
     int64 nextAttemptTime = 8;
     string uniqueId = 9;
+    string operatorID = 10;
+    int64 answerTime = 11;
 }

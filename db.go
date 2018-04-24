@@ -99,6 +99,28 @@ func (d *database) delete(b, k string) {
 	}
 }
 
+func (d *database) deleteMany(b string, keys []string) {
+	err := d.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(b))
+		if b == nil {
+			return nil
+		}
+
+		for _, k := range keys {
+			err := b.Delete([]byte(k))
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		// errcheck stub, because no errors can be returned from bolt
+	}
+}
+
 func (d *database) get(b, k string) ([]byte, error) {
 	var content []byte
 	err := d.db.View(func(tx *bolt.Tx) error {
