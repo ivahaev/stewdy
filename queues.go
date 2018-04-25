@@ -8,9 +8,11 @@ var (
 )
 
 type queue struct {
-	id     string
-	free   int
-	queued int
+	id          string
+	free        int
+	queued      int
+	originating int
+	connected   int
 }
 
 // SetQueueStat updates internal statistic of call queue.

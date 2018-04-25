@@ -3,7 +3,7 @@ package stewdy
 import (
 	"container/list"
 	"errors"
-	fmt "fmt"
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -21,15 +21,18 @@ var (
 )
 
 type campaign struct {
-	c               Campaign
-	l               *list.List
-	e               *list.Element
-	nextAttemptTime int64
-	originating     map[string]*Target
-	answered        map[string]*Target
-	failedIn        time.Duration
-	waitForConnect  time.Duration
-	m               *sync.Mutex
+	c                Campaign
+	l                *list.List
+	e                *list.Element
+	nextAttemptTime  int64
+	currentIntensity int32
+	originating      map[string]*Target
+	answered         map[string]*Target
+	connected        map[string]*Target
+	waitForAnswer    time.Duration
+	waitForConnect   time.Duration
+	waitForHangup    time.Duration
+	m                *sync.Mutex
 }
 
 func (c campaign) addTargets(targets []*Target) {
@@ -41,11 +44,11 @@ func (c campaign) addTargets(targets []*Target) {
 	c.m.Unlock()
 }
 
-func (c campaign) next(n int) []*Target {
+func (c campaign) next(n int32) []*Target {
 	return c.nextAtTime(n, time.Now())
 }
 
-func (c campaign) nextAtTime(n int, t time.Time) []*Target {
+func (c campaign) nextAtTime(n int32, t time.Time) []*Target {
 	c.m.Lock()
 	defer c.m.Unlock()
 
@@ -68,22 +71,9 @@ func (c campaign) nextAtTime(n int, t time.Time) []*Target {
 		c.e = c.l.Front()
 	}
 
-	ids := make([]string, 0, n)
-	defer func() {
-		if len(ids) == 0 {
-			return
-		}
-
-		err := db.saveMany(c.c.GetId(), res)
-		if err != nil {
-			panic(err)
-		}
-	}()
-
-	for e := c.e; e != nil; e = e.Next() {
+	for e := c.e; e != nil || len(res) < int(n); e = e.Next() {
 		c.l.Remove(e)
 		t := e.Value.(*Target)
-		ids = append(ids, t.GetId())
 		if t.GetAttempts() >= c.c.GetMaxAttempts() {
 			continue
 		}
@@ -92,12 +82,54 @@ func (c campaign) nextAtTime(n int, t time.Time) []*Target {
 		t.LastAttemptTime = time.Now().Unix()
 		c.originating[t.GetId()] = t
 		res = append(res, t)
-		if len(res) == n {
-			return res
-		}
+	}
+
+	err := db.saveManyTargets(c.c.GetId(), res)
+	if err != nil {
+		panic(err)
 	}
 
 	return res
+}
+
+func (c campaign) freeSlots() int32 {
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	currentCalls := int32(len(c.originating) + len(c.answered) + len(c.connected))
+	freeSlots := c.c.ConcurrentCalls - currentCalls
+	if freeSlots <= 0 {
+		return 0
+	}
+
+	if freeSlots > c.c.Intensity {
+		freeSlots = c.c.Intensity
+	}
+
+	return freeSlots
+}
+
+func (c campaign) originator() {
+	ticker := time.NewTicker(time.Second)
+	for range ticker.C {
+		c.originateNext()
+	}
+}
+
+func (c campaign) originateNext() {
+	freeSlots := c.freeSlots()
+	if freeSlots <= 0 {
+		return
+	}
+
+	targets := c.next(freeSlots)
+	if len(targets) == 0 {
+		return
+	}
+
+	for _, t := range targets {
+		emit(EventOriginate, *t)
+	}
 }
 
 // sort does not lock mutex so you should do it by yourself.
@@ -122,7 +154,7 @@ func (c campaign) sort() {
 }
 
 func (c campaign) targetsCleaner() {
-	ticker := time.NewTicker(c.failedIn)
+	ticker := time.NewTicker(c.waitForAnswer)
 	for range ticker.C {
 		c.cleanTargets()
 	}
@@ -132,8 +164,9 @@ func (c campaign) cleanTargets() {
 	c.m.Lock()
 	defer c.m.Unlock()
 
-	failedTime := time.Now().Add(-1 * c.failedIn).Unix()
+	failedTime := time.Now().Add(-1 * c.waitForAnswer).Unix()
 	notConnectedTime := time.Now().Add(-1 * c.waitForConnect).Unix()
+	notHangupedTime := time.Now().Add(-1 * c.waitForHangup).Unix()
 	updated := []*Target{}
 	deleted := []string{}
 
@@ -169,8 +202,15 @@ func (c campaign) cleanTargets() {
 		}
 	}
 
+	for k, v := range c.connected {
+		if v.ConnectTime <= notHangupedTime {
+			delete(c.connected, k)
+			go emit(EventHangup, *v)
+		}
+	}
+
 	if len(updated) > 0 {
-		err := db.saveMany(c.c.GetId(), updated)
+		err := db.saveManyTargets(c.c.GetId(), updated)
 		if err != nil {
 			panic(err)
 		}
@@ -181,10 +221,8 @@ func (c campaign) cleanTargets() {
 	}
 }
 
-func answered(campaignID, targetID, uniqueID string) error {
-	campaignsm.RLock()
-	c, ok := campaigns[campaignID]
-	campaignsm.RUnlock()
+func answered(targetID, uniqueID string) error {
+	c, ok := findCampaignByTargetID(targetID)
 	if !ok {
 		return ErrNotFound
 	}
@@ -202,7 +240,7 @@ func answered(campaignID, targetID, uniqueID string) error {
 	go emit(EventAnswer, *t)
 	c.answered[uniqueID] = t
 
-	err := db.save(campaignID, t)
+	err := db.save(c.c.GetId(), t)
 	if err != nil {
 		panic(err)
 	}
@@ -210,10 +248,8 @@ func answered(campaignID, targetID, uniqueID string) error {
 	return nil
 }
 
-func connected(campaignID, uniqueID, operatorID string) error {
-	campaignsm.RLock()
-	c, ok := campaigns[campaignID]
-	campaignsm.RUnlock()
+func connected(uniqueID, operatorID string) error {
+	c, ok := findCampaignByUniqueID(uniqueID)
 	if !ok {
 		return ErrNotFound
 	}
@@ -229,7 +265,8 @@ func connected(campaignID, uniqueID, operatorID string) error {
 	delete(c.answered, uniqueID)
 	t.OperatorID = operatorID
 	go emit(EventConnect, *t)
-	err := db.save(campaignID, t)
+	c.connected[uniqueID] = t
+	err := db.save(c.c.GetId(), t)
 	if err != nil {
 		panic(err)
 	}
@@ -237,10 +274,8 @@ func connected(campaignID, uniqueID, operatorID string) error {
 	return nil
 }
 
-func failed(campaignID, targetID string) error {
-	campaignsm.RLock()
-	c, ok := campaigns[campaignID]
-	campaignsm.RUnlock()
+func failed(targetID string) error {
+	c, ok := findCampaignByTargetID(targetID)
 	if !ok {
 		return ErrNotFound
 	}
@@ -256,16 +291,89 @@ func failed(campaignID, targetID string) error {
 	delete(c.originating, targetID)
 	if t.Attempts >= c.c.GetMaxAttempts() {
 		go emit(EventFail, *t)
-		db.delete(campaignID, t.GetId())
+		db.delete(c.c.GetId(), t.GetId())
 		return nil
 	}
 
 	t.NextAttemptTime = t.LastAttemptTime + c.c.NextAttemptDelay
 	c.l.PushFront(t)
-	err := db.save(campaignID, t)
+	err := db.save(c.c.GetId(), t)
 	if err != nil {
 		panic(err)
 	}
+
+	return nil
+}
+
+func findCampaignByTargetID(targetID string) (campaign, bool) {
+	campaignsm.RLock()
+	defer campaignsm.RUnlock()
+
+	for _, c := range campaigns {
+		if _, ok := c.originating[targetID]; ok {
+			return c, true
+		}
+
+		if _, ok := c.connected[targetID]; ok {
+			return c, true
+		}
+	}
+
+	return campaign{}, false
+}
+
+func findCampaignByUniqueID(uniqueID string) (campaign, bool) {
+	campaignsm.RLock()
+	defer campaignsm.RUnlock()
+
+	for _, c := range campaigns {
+		if _, ok := c.answered[uniqueID]; ok {
+			return c, true
+		}
+	}
+
+	return campaign{}, false
+}
+
+func hanguped(uniqueID string) error {
+	c, ok := findCampaignByUniqueID(uniqueID)
+	if !ok {
+		return ErrNotFound
+	}
+
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	t, ok := c.answered[uniqueID]
+	if ok {
+		if t.Attempts >= c.c.GetMaxAttempts() {
+			go func() {
+				emit(EventHangup, *t)
+				emit(EventFail, *t)
+			}()
+			db.delete(c.c.GetId(), t.GetId())
+
+			return nil
+		}
+
+		t.NextAttemptTime = t.LastAttemptTime + c.c.NextAttemptDelay
+		c.l.PushFront(t)
+		err := db.save(c.c.GetId(), t)
+		if err != nil {
+			panic(err)
+		}
+
+		go emit(EventHangup, *t)
+
+		return nil
+	}
+
+	t, ok = c.connected[uniqueID]
+	if !ok {
+		return ErrNotFound
+	}
+
+	go emit(EventHangup, *t)
 
 	return nil
 }
@@ -360,9 +468,20 @@ func UpdateCampaign(c Campaign) error {
 			c:              c,
 			l:              list.New(),
 			originating:    map[string]*Target{},
-			failedIn:       time.Minute,
+			waitForAnswer:  time.Minute,
 			waitForConnect: time.Hour,
+			waitForHangup:  time.Hour,
 			m:              &sync.Mutex{},
+		}
+
+		if c.WaitForAnswer > 0 {
+			cmp.waitForAnswer = time.Duration(c.WaitForAnswer) * time.Second
+		}
+		if c.WaitForConnect > 0 {
+			cmp.waitForConnect = time.Duration(c.WaitForConnect) * time.Second
+		}
+		if c.MaxCallDuration > 0 {
+			cmp.waitForHangup = time.Duration(c.MaxCallDuration) * time.Second
 		}
 
 		go cmp.targetsCleaner()
@@ -389,7 +508,7 @@ func AddTargets(campaignID string, targets []*Target) error {
 		v.UniqueId = ""
 	}
 
-	err := db.saveMany(campaignID, targets)
+	err := db.saveManyTargets(campaignID, targets)
 	if err != nil {
 		return err
 	}

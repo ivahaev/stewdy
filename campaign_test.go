@@ -125,6 +125,23 @@ func TestUpdateCampaign(t *testing.T) {
 			if fmt.Sprintf("%v", err) != fmt.Sprintf("%v", d.err) {
 				t.Errorf("UpdateCampaign(d.c) => %v, expected %v", err, d.err)
 			}
+
+			if err != nil {
+				return
+			}
+
+			cmp, err := db.getCampaign(d.c.GetId())
+			if err != nil {
+				t.Errorf("db.getCampaign(%s) => unexpected error: %v", d.c.GetId(), err)
+			}
+
+			if cmp.GetId() != d.c.GetId() {
+				t.Errorf("cmp.Id => %s, expected %s", cmp.GetId(), d.c.GetId())
+			}
+
+			if cmp.GetQueueID() != d.c.GetQueueID() {
+				t.Errorf("cmp.QueueID => %s, expected %s", cmp.GetQueueID(), d.c.GetQueueID())
+			}
 		})
 	}
 }

@@ -14,8 +14,10 @@ message campaign {
     int32 multiplier = 9;
     int32 batchSize = 10;
     int32 intensity = 11;
-    repeated schedule timeTable = 14;
-    string currentScheduleID = 15;
+    int32 waitForAnswer = 12; /// number of seconds to wait for client answer
+    int32 waitForConnect = 13; /// number of seconds to wait for operator's connect
+    int32 maxCallDuration = 14; /// maximum call duration in seconds
+    repeated schedule timeTable = 15;
 }
 
 message schedule {
@@ -37,4 +39,5 @@ message target {
     string uniqueId = 9;
     string operatorID = 10;
     int64 answerTime = 11;
+    int64 connectTime = 12;
 }

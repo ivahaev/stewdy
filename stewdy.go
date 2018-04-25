@@ -22,19 +22,24 @@ const (
 	EventAnswer
 	EventConnect
 	EventFail
+	EventHangup
 )
 
 // Answered marks target as answered and sets uniqueID field.
-func Answered(campaignID, targetID, uniqueID string) error {
-	return answered(campaignID, targetID, uniqueID)
+func Answered(targetID, uniqueID string) error {
+	return answered(targetID, uniqueID)
 }
 
-func Connected(campaignID, uniqueID, operatorID string) error {
-	return connected(campaignID, uniqueID, operatorID)
+func Connected(uniqueID, operatorID string) error {
+	return connected(uniqueID, operatorID)
 }
 
-func Failed(campaignID, targetID string) error {
-	return failed(campaignID, targetID)
+func Failed(targetID string) error {
+	return failed(targetID)
+}
+
+func Hanguped(uniqueID string) error {
+	return hanguped(uniqueID)
 }
 
 func On(e TargetEvent, f EventHandler) {

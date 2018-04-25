@@ -99,6 +99,21 @@ func (d *database) delete(b, k string) {
 	}
 }
 
+func (d *database) deleteBucket(key string) {
+	err := d.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(key))
+		if b == nil {
+			return nil
+		}
+
+		return tx.DeleteBucket([]byte(key))
+	})
+
+	if err != nil {
+		// errcheck stub, because no errors can be returned from bolt
+	}
+}
+
 func (d *database) deleteMany(b string, keys []string) {
 	err := d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(b))
@@ -163,10 +178,37 @@ func (d *database) save(b string, item proto.Message) error {
 	return err
 }
 
-func (d *database) saveMany(b string, data interface{}) error {
-	items, ok := data.([]interface{})
-	if !ok {
-		return ErrShouldBeSlice
+func (d *database) saveManyTargets(b string, items []*Target) error {
+	if len(items) == 0 {
+		return nil
+	}
+	err := d.db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte(b))
+		if err != nil {
+			return err
+		}
+
+		for _, item := range items {
+			encoded, err := proto.Marshal(item)
+			if err != nil {
+				return err
+			}
+
+			err = b.Put([]byte(item.GetId()), encoded)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	return err
+}
+
+func (d *database) saveMany(b string, items []interface{}) error {
+	if len(items) == 0 {
+		return nil
 	}
 
 	err := d.db.Update(func(tx *bolt.Tx) error {
