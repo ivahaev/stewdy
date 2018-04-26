@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	campaigns  = map[string]campaign{}
+	campaigns  = map[string]*campaign{}
 	campaignsm sync.RWMutex
 )
 
@@ -25,7 +25,7 @@ type campaign struct {
 	l                *list.List
 	e                *list.Element
 	nextAttemptTime  int64
-	currentIntensity int32
+	currentBatchSize int32
 	originating      map[string]*Target
 	answered         map[string]*Target
 	connected        map[string]*Target
@@ -35,7 +35,7 @@ type campaign struct {
 	m                *sync.Mutex
 }
 
-func (c campaign) addTargets(targets []*Target) {
+func (c *campaign) addTargets(targets []*Target) {
 	c.m.Lock()
 	for _, v := range targets {
 		c.l.PushBack(v)
@@ -44,11 +44,11 @@ func (c campaign) addTargets(targets []*Target) {
 	c.m.Unlock()
 }
 
-func (c campaign) next(n int32) []*Target {
+func (c *campaign) next(n int32) []*Target {
 	return c.nextAtTime(n, time.Now())
 }
 
-func (c campaign) nextAtTime(n int32, t time.Time) []*Target {
+func (c *campaign) nextAtTime(n int32, t time.Time) []*Target {
 	c.m.Lock()
 	defer c.m.Unlock()
 
@@ -92,31 +92,60 @@ func (c campaign) nextAtTime(n int32, t time.Time) []*Target {
 	return res
 }
 
-func (c campaign) freeSlots() int32 {
+func (c *campaign) freeSlots() int32 {
+	free, queued := queueStat(c.c.GetQueueID())
+	qFreeSlots := int32(free - queued)
+	if qFreeSlots < 0 {
+		return 0
+	}
+
 	c.m.Lock()
 	defer c.m.Unlock()
 
 	currentCalls := int32(len(c.originating) + len(c.answered) + len(c.connected))
 	freeSlots := c.c.ConcurrentCalls - currentCalls
 	if freeSlots <= 0 {
+		c.calcBatchSize(0)
 		return 0
 	}
 
-	if freeSlots > c.c.Intensity {
+	if c.c.Intensity > 0 && freeSlots > c.c.Intensity {
 		freeSlots = c.c.Intensity
 	}
 
-	return freeSlots
+	if freeSlots > qFreeSlots {
+		freeSlots = qFreeSlots
+	}
+
+	return c.calcBatchSize(freeSlots)
 }
 
-func (c campaign) originator() {
+func (c *campaign) calcBatchSize(max int32) int32 {
+	if c.currentBatchSize == 0 {
+		c.currentBatchSize = 2
+	} else {
+		c.currentBatchSize = c.currentBatchSize * 2
+	}
+
+	if max < c.currentBatchSize {
+		c.currentBatchSize = max
+	}
+
+	if c.c.BatchSize > 0 && c.currentBatchSize > c.c.BatchSize {
+		c.currentBatchSize = c.c.BatchSize
+	}
+
+	return c.currentBatchSize
+}
+
+func (c *campaign) originator() {
 	ticker := time.NewTicker(time.Second)
 	for range ticker.C {
 		c.originateNext()
 	}
 }
 
-func (c campaign) originateNext() {
+func (c *campaign) originateNext() {
 	freeSlots := c.freeSlots()
 	if freeSlots <= 0 {
 		return
@@ -133,7 +162,7 @@ func (c campaign) originateNext() {
 }
 
 // sort does not lock mutex so you should do it by yourself.
-func (c campaign) sort() {
+func (c *campaign) sort() {
 	targets := make([]*Target, 0, c.l.Len())
 	for e := c.l.Front(); e != nil; e = e.Next() {
 		t := e.Value.(*Target)
@@ -153,14 +182,14 @@ func (c campaign) sort() {
 	}
 }
 
-func (c campaign) targetsCleaner() {
+func (c *campaign) targetsCleaner() {
 	ticker := time.NewTicker(c.waitForAnswer)
 	for range ticker.C {
 		c.cleanTargets()
 	}
 }
 
-func (c campaign) cleanTargets() {
+func (c *campaign) cleanTargets() {
 	c.m.Lock()
 	defer c.m.Unlock()
 
@@ -305,7 +334,7 @@ func failed(targetID string) error {
 	return nil
 }
 
-func findCampaignByTargetID(targetID string) (campaign, bool) {
+func findCampaignByTargetID(targetID string) (*campaign, bool) {
 	campaignsm.RLock()
 	defer campaignsm.RUnlock()
 
@@ -319,10 +348,10 @@ func findCampaignByTargetID(targetID string) (campaign, bool) {
 		}
 	}
 
-	return campaign{}, false
+	return nil, false
 }
 
-func findCampaignByUniqueID(uniqueID string) (campaign, bool) {
+func findCampaignByUniqueID(uniqueID string) (*campaign, bool) {
 	campaignsm.RLock()
 	defer campaignsm.RUnlock()
 
@@ -332,7 +361,7 @@ func findCampaignByUniqueID(uniqueID string) (campaign, bool) {
 		}
 	}
 
-	return campaign{}, false
+	return nil, false
 }
 
 func hanguped(uniqueID string) error {
@@ -464,7 +493,7 @@ func UpdateCampaign(c Campaign) error {
 	campaignsm.Lock()
 	cmp, ok := campaigns[c.GetId()]
 	if !ok {
-		cmp = campaign{
+		cmp = &campaign{
 			c:              c,
 			l:              list.New(),
 			originating:    map[string]*Target{},
@@ -484,6 +513,7 @@ func UpdateCampaign(c Campaign) error {
 			cmp.waitForHangup = time.Duration(c.MaxCallDuration) * time.Second
 		}
 
+		campaigns[c.GetId()] = cmp
 		go cmp.targetsCleaner()
 	}
 	campaignsm.Unlock()

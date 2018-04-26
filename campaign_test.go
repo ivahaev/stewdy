@@ -3,6 +3,7 @@ package stewdy
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -19,6 +20,9 @@ func TestUpdateCampaign(t *testing.T) {
 				MaxAttempts:      3,
 				NextAttemptDelay: 60,
 				ConcurrentCalls:  10,
+				WaitForAnswer:    60,
+				WaitForConnect:   600,
+				MaxCallDuration:  3600,
 				TimeTable: []*Schedule{
 					{
 						Id:      "S1",
@@ -219,6 +223,213 @@ func TestOverlaping(t *testing.T) {
 			res := isOverlaped(v.s1, v.s2)
 			if res != v.res {
 				t.Errorf("isOverlaped(v.s1, v.s2) => %t, expected %t", res, v.res)
+			}
+		})
+	}
+}
+
+func TestAddTargets(t *testing.T) {
+	c := Campaign{
+		Id:      "Add1",
+		QueueID: "QAdd1",
+		TimeTable: []*Schedule{
+			{
+				Id:    "1",
+				Start: 10,
+				Stop:  20,
+			},
+		},
+	}
+
+	err := UpdateCampaign(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	targets := []*Target{
+		{
+			Id:          "T1",
+			PhoneNumber: "123",
+		},
+		{
+			Id:          "T2",
+			PhoneNumber: "234",
+		},
+	}
+
+	err = AddTargets(c.Id, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCalcBatchSize(t *testing.T) {
+	testData := []struct {
+		c   *campaign
+		max int32
+		res int32
+	}{
+		{
+			c:   &campaign{currentBatchSize: 0},
+			max: 10,
+			res: 2,
+		},
+		{
+			c:   &campaign{currentBatchSize: 0},
+			max: 1,
+			res: 1,
+		},
+		{
+			c:   &campaign{currentBatchSize: 1},
+			max: 10,
+			res: 2,
+		},
+		{
+			c:   &campaign{currentBatchSize: 10},
+			max: 12,
+			res: 12,
+		},
+		{
+			c:   &campaign{currentBatchSize: 4},
+			max: 12,
+			res: 8,
+		},
+		{
+			c:   &campaign{currentBatchSize: 4},
+			max: 2,
+			res: 2,
+		},
+		{
+			c:   &campaign{currentBatchSize: 3},
+			max: 9,
+			res: 6,
+		},
+	}
+
+	for i, v := range testData {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			c := v.c
+			currentBatchSize := c.currentBatchSize
+			res := c.calcBatchSize(v.max)
+			if res != v.res {
+				t.Errorf("currentBatchSize was %d, c.calcBatchSize(%d) = %d, expected %d", currentBatchSize, v.max, c.currentBatchSize, v.res)
+			}
+		})
+	}
+}
+
+func TestFreeSlots(t *testing.T) {
+	testData := []struct {
+		name         string
+		q            string
+		free, queued int
+		c            *campaign
+		res          int32
+	}{
+		{
+			name:   "1",
+			q:      "testQ",
+			free:   10,
+			queued: 0,
+			c: &campaign{
+				currentBatchSize: 2,
+				c: Campaign{
+					QueueID:         "testQ",
+					ConcurrentCalls: 40,
+					BatchSize:       20,
+				},
+				m: &sync.Mutex{},
+			},
+			res: 4,
+		},
+		{
+			name:   "2",
+			q:      "testQ",
+			free:   30,
+			queued: 0,
+			c: &campaign{
+				currentBatchSize: 20,
+				c: Campaign{
+					QueueID:         "testQ",
+					ConcurrentCalls: 40,
+					BatchSize:       20,
+				},
+				m: &sync.Mutex{},
+			},
+			res: 20,
+		},
+		{
+			name:   "3",
+			q:      "testQ",
+			free:   10,
+			queued: 10,
+			c: &campaign{
+				currentBatchSize: 20,
+				c: Campaign{
+					QueueID:         "testQ",
+					ConcurrentCalls: 40,
+					BatchSize:       20,
+				},
+				m: &sync.Mutex{},
+			},
+			res: 0,
+		},
+		{
+			name:   "4",
+			q:      "testQ",
+			free:   3,
+			queued: 0,
+			c: &campaign{
+				currentBatchSize: 20,
+				c: Campaign{
+					QueueID:         "testQ",
+					ConcurrentCalls: 40,
+					BatchSize:       20,
+				},
+				m: &sync.Mutex{},
+			},
+			res: 3,
+		},
+		{
+			name:   "5",
+			q:      "testQ",
+			free:   30,
+			queued: 7,
+			c: &campaign{
+				currentBatchSize: 9,
+				c: Campaign{
+					QueueID:         "testQ",
+					ConcurrentCalls: 40,
+					BatchSize:       20,
+				},
+				m: &sync.Mutex{},
+			},
+			res: 18,
+		},
+		{
+			name:   "6",
+			q:      "testQ",
+			free:   30,
+			queued: 7,
+			c: &campaign{
+				currentBatchSize: 9,
+				c: Campaign{
+					QueueID:         "unknownQ",
+					ConcurrentCalls: 40,
+					BatchSize:       20,
+				},
+				m: &sync.Mutex{},
+			},
+			res: 0,
+		},
+	}
+
+	for _, v := range testData {
+		t.Run(v.name, func(t *testing.T) {
+			SetQueueStat(v.q, v.free, v.queued)
+			res := v.c.freeSlots()
+			if res != v.res {
+				t.Errorf("c.freeSlots() => %d, expected %d", res, v.res)
 			}
 		})
 	}

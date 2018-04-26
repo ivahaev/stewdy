@@ -3,9 +3,7 @@ package stewdy
 import "testing"
 
 func TestSetQueueStat(t *testing.T) {
-	if len(queues) != 0 {
-		t.Fatal("not emtpty queues")
-	}
+	queues = map[string]queue{}
 
 	SetQueueStat("1", 1, 2)
 	if len(queues) != 1 {
@@ -38,5 +36,21 @@ func TestSetQueueStat(t *testing.T) {
 	SetQueueStat("10", 100, 200)
 	if len(queues) != 2 {
 		t.Fatalf("len(queues) => %d, expected 2", len(queues))
+	}
+
+	free, queued := queueStat("10")
+	if free != 100 {
+		t.Errorf(`queueStat("10").free = %d, expected 100`, free)
+	}
+	if queued != 200 {
+		t.Errorf(`queueStat("10").queued = %d, expected 200`, queued)
+	}
+
+	free, queued = queueStat("noExistingQ")
+	if free != 0 {
+		t.Errorf(`queueStat("noExistingQ").free = %d, expected 0`, free)
+	}
+	if queued != 0 {
+		t.Errorf(`queueStat("noExistingQ").queued = %d, expected 0`, queued)
 	}
 }

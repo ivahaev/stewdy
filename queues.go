@@ -28,10 +28,7 @@ func queueStat(id string) (free, queued int) {
 	queuesLocker.RLock()
 	defer queuesLocker.RUnlock()
 
-	q, ok := queues[id]
-	if !ok {
-		return
-	}
+	q := queues[id]
 
 	return q.free, q.queued
 }
