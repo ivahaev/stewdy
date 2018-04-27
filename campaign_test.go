@@ -1,10 +1,12 @@
 package stewdy
 
 import (
+	"container/list"
 	"errors"
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestUpdateCampaign(t *testing.T) {
@@ -504,4 +506,198 @@ func TestFreeSlots(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClearTargets(t *testing.T) {
+	now := time.Now()
+
+	testData := []struct {
+		name                                      string
+		c                                         *campaign
+		originatingCnt, answeredCnt, connectedCnt int
+		failedTargets                             map[string]struct{}
+		hangupedTargets                           map[string]struct{}
+	}{
+		{
+			name: "1",
+			c: &campaign{
+				waitForAnswer:  time.Minute,
+				waitForConnect: 10 * time.Minute,
+				waitForHangup:  time.Hour,
+				c:              Campaign{Id: "C1", MaxAttempts: 2},
+				l:              list.New(),
+				originating: map[string]*Target{
+					"o111": &Target{Id: "o111", LastAttemptTime: now.Unix(), Attempts: 1},
+					"o222": &Target{Id: "o222", LastAttemptTime: now.Unix(), Attempts: 1},
+					"o333": &Target{Id: "o333", LastAttemptTime: now.Add(-2 * time.Minute).Unix(), Attempts: 1},
+					"o444": &Target{Id: "o444", LastAttemptTime: now.Add(-2 * time.Minute).Unix(), Attempts: 2},
+				},
+				answered: map[string]*Target{
+					"a111": &Target{Id: "a111", AnswerTime: now.Unix(), Attempts: 1},
+					"a222": &Target{Id: "a222", AnswerTime: now.Unix(), Attempts: 1},
+					"a333": &Target{Id: "a333", AnswerTime: now.Add(-2 * time.Minute).Unix(), Attempts: 1},
+					"a444": &Target{Id: "a444", AnswerTime: now.Add(-2 * time.Minute).Unix(), Attempts: 2},
+				},
+				connected: map[string]*Target{
+					"c111": &Target{Id: "c111", ConnectTime: now.Unix(), Attempts: 1},
+					"c222": &Target{Id: "c222", ConnectTime: now.Unix(), Attempts: 1},
+					"c333": &Target{Id: "c333", ConnectTime: now.Add(-2 * time.Minute).Unix(), Attempts: 1},
+					"c444": &Target{Id: "c444", ConnectTime: now.Add(-2 * time.Minute).Unix(), Attempts: 2},
+				},
+				m: &sync.Mutex{},
+			},
+			originatingCnt: 2,
+			answeredCnt:    4,
+			connectedCnt:   4,
+			failedTargets:  map[string]struct{}{"o444": struct{}{}},
+		},
+		{
+			name: "2",
+			c: &campaign{
+				waitForAnswer:  time.Minute,
+				waitForConnect: 10 * time.Minute,
+				waitForHangup:  time.Hour,
+				c:              Campaign{Id: "C1", MaxAttempts: 2},
+				l:              list.New(),
+				originating: map[string]*Target{
+					"o111": &Target{Id: "o111", LastAttemptTime: now.Unix(), Attempts: 1},
+					"o222": &Target{Id: "o222", LastAttemptTime: now.Unix(), Attempts: 1},
+					"o333": &Target{Id: "o333", LastAttemptTime: now.Add(-2 * time.Minute).Unix(), Attempts: 1},
+					"o444": &Target{Id: "o444", LastAttemptTime: now.Add(-2 * time.Minute).Unix(), Attempts: 1},
+				},
+				answered: map[string]*Target{
+					"a111": &Target{Id: "a111", AnswerTime: now.Unix(), Attempts: 1},
+					"a222": &Target{Id: "a222", AnswerTime: now.Unix(), Attempts: 1},
+					"a333": &Target{Id: "a333", AnswerTime: now.Add(-20 * time.Minute).Unix(), Attempts: 1},
+					"a444": &Target{Id: "a444", AnswerTime: now.Add(-2 * time.Minute).Unix(), Attempts: 2},
+				},
+				connected: map[string]*Target{
+					"c111": &Target{Id: "c111", ConnectTime: now.Unix(), Attempts: 1},
+					"c222": &Target{Id: "c222", ConnectTime: now.Unix(), Attempts: 1},
+					"c333": &Target{Id: "c333", ConnectTime: now.Add(-2 * time.Minute).Unix(), Attempts: 1},
+					"c444": &Target{Id: "c444", ConnectTime: now.Add(-2 * time.Minute).Unix(), Attempts: 2},
+				},
+				m: &sync.Mutex{},
+			},
+			originatingCnt: 2,
+			answeredCnt:    3,
+			connectedCnt:   4,
+			failedTargets:  map[string]struct{}{},
+		},
+		{
+			name: "3",
+			c: &campaign{
+				waitForAnswer:  time.Minute,
+				waitForConnect: 10 * time.Minute,
+				waitForHangup:  time.Hour,
+				c:              Campaign{Id: "C1", MaxAttempts: 2},
+				l:              list.New(),
+				originating: map[string]*Target{
+					"o111": &Target{Id: "o111", LastAttemptTime: now.Unix(), Attempts: 1},
+					"o222": &Target{Id: "o222", LastAttemptTime: now.Unix(), Attempts: 1},
+					"o333": &Target{Id: "o333", LastAttemptTime: now.Add(-2 * time.Minute).Unix(), Attempts: 1},
+					"o444": &Target{Id: "o444", LastAttemptTime: now.Add(-2 * time.Minute).Unix(), Attempts: 1},
+				},
+				answered: map[string]*Target{
+					"a111": &Target{Id: "a111", AnswerTime: now.Unix(), Attempts: 1},
+					"a222": &Target{Id: "a222", AnswerTime: now.Unix(), Attempts: 1},
+					"a333": &Target{Id: "a333", AnswerTime: now.Add(-2 * time.Minute).Unix(), Attempts: 1},
+					"a444": &Target{Id: "a444", AnswerTime: now.Add(-2 * time.Minute).Unix(), Attempts: 2},
+				},
+				connected: map[string]*Target{
+					"c111": &Target{Id: "c111", ConnectTime: now.Unix(), Attempts: 1},
+					"c222": &Target{Id: "c222", ConnectTime: now.Unix(), Attempts: 1},
+					"c333": &Target{Id: "c333", ConnectTime: now.Add(-2 * time.Minute).Unix(), Attempts: 1},
+					"c444": &Target{Id: "c444", ConnectTime: now.Add(-2 * time.Hour).Unix(), Attempts: 2},
+				},
+				m: &sync.Mutex{},
+			},
+			originatingCnt:  2,
+			answeredCnt:     4,
+			connectedCnt:    3,
+			failedTargets:   map[string]struct{}{},
+			hangupedTargets: map[string]struct{}{"c444": struct{}{}},
+		},
+		{
+			name: "4",
+			c: &campaign{
+				waitForAnswer:  time.Minute,
+				waitForConnect: 10 * time.Minute,
+				waitForHangup:  time.Hour,
+				c:              Campaign{Id: "C1", MaxAttempts: 2},
+				l:              list.New(),
+				originating: map[string]*Target{
+					"o111": &Target{Id: "o111", LastAttemptTime: now.Unix(), Attempts: 1},
+					"o222": &Target{Id: "o222", LastAttemptTime: now.Unix(), Attempts: 1},
+					"o333": &Target{Id: "o333", LastAttemptTime: now.Add(-2 * time.Minute).Unix(), Attempts: 1},
+					"o444": &Target{Id: "o444", LastAttemptTime: now.Add(-2 * time.Minute).Unix(), Attempts: 2},
+				},
+				answered: map[string]*Target{
+					"a111": &Target{Id: "a111", AnswerTime: now.Unix(), Attempts: 1},
+					"a222": &Target{Id: "a222", AnswerTime: now.Unix(), Attempts: 1},
+					"a333": &Target{Id: "a333", AnswerTime: now.Add(-20 * time.Minute).Unix(), Attempts: 1},
+					"a444": &Target{Id: "a444", AnswerTime: now.Add(-20 * time.Minute).Unix(), Attempts: 2},
+				},
+				connected: map[string]*Target{
+					"c111": &Target{Id: "c111", ConnectTime: now.Unix(), Attempts: 1},
+					"c222": &Target{Id: "c222", ConnectTime: now.Unix(), Attempts: 1},
+					"c333": &Target{Id: "c333", ConnectTime: now.Add(-2 * time.Hour).Unix(), Attempts: 1},
+					"c444": &Target{Id: "c444", ConnectTime: now.Add(-2 * time.Hour).Unix(), Attempts: 2},
+				},
+				m: &sync.Mutex{},
+			},
+			originatingCnt:  2,
+			answeredCnt:     2,
+			connectedCnt:    2,
+			failedTargets:   map[string]struct{}{"o444": struct{}{}, "a444": struct{}{}},
+			hangupedTargets: map[string]struct{}{"c444": struct{}{}, "c333": struct{}{}},
+		},
+	}
+
+	eventHandlers = map[TargetEvent][]EventHandler{}
+	failedTargets := map[string]struct{}{}
+	hangupedTargets := map[string]struct{}{}
+	On(EventFail, func(t Target) {
+		failedTargets[t.Id] = struct{}{}
+	})
+	On(EventHangup, func(t Target) {
+		hangupedTargets[t.Id] = struct{}{}
+	})
+
+	for _, v := range testData {
+		failedTargets = map[string]struct{}{}
+		hangupedTargets = map[string]struct{}{}
+
+		t.Run(v.name, func(t *testing.T) {
+			c := v.c
+			c.cleanTargets(now)
+			if len(c.originating) != v.originatingCnt {
+				t.Errorf("len(c.originating) = %d, expected %d", len(c.originating), v.originatingCnt)
+			}
+			if len(c.answered) != v.answeredCnt {
+				t.Errorf("len(c.answered) = %d, expected %d", len(c.answered), v.answeredCnt)
+			}
+			if len(c.connected) != v.connectedCnt {
+				t.Errorf("len(c.connected) = %d, expected %d", len(c.connected), v.connectedCnt)
+			}
+			if len(failedTargets) != len(v.failedTargets) {
+				t.Fatalf("failedTargets = %v, expected %v", failedTargets, v.failedTargets)
+			}
+			for k := range failedTargets {
+				if _, ok := v.failedTargets[k]; !ok {
+					t.Errorf("Unexpected failed target Id: %s", k)
+				}
+			}
+			if len(hangupedTargets) != len(v.hangupedTargets) {
+				t.Fatalf("hangupedTargets = %v, expected %v", hangupedTargets, v.hangupedTargets)
+			}
+			for k := range hangupedTargets {
+				if _, ok := v.hangupedTargets[k]; !ok {
+					t.Errorf("Unexpected hanguped target Id: %s", k)
+				}
+			}
+		})
+	}
+
+	eventHandlers = map[TargetEvent][]EventHandler{}
 }

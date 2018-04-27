@@ -184,18 +184,18 @@ func (c *campaign) sort() {
 
 func (c *campaign) targetsCleaner() {
 	ticker := time.NewTicker(c.waitForAnswer)
-	for range ticker.C {
-		c.cleanTargets()
+	for now := range ticker.C {
+		c.cleanTargets(now)
 	}
 }
 
-func (c *campaign) cleanTargets() {
+func (c *campaign) cleanTargets(now time.Time) {
 	c.m.Lock()
 	defer c.m.Unlock()
 
-	failedTime := time.Now().Add(-1 * c.waitForAnswer).Unix()
-	notConnectedTime := time.Now().Add(-1 * c.waitForConnect).Unix()
-	notHangupedTime := time.Now().Add(-1 * c.waitForHangup).Unix()
+	failedTime := now.Add(-1 * c.waitForAnswer).Unix()
+	notConnectedTime := now.Add(-1 * c.waitForConnect).Unix()
+	notHangupedTime := now.Add(-1 * c.waitForHangup).Unix()
 	updated := []*Target{}
 	deleted := []string{}
 
