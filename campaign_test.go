@@ -422,6 +422,77 @@ func TestFreeSlots(t *testing.T) {
 			},
 			res: 0,
 		},
+		{
+			name:   "7",
+			q:      "testQ",
+			free:   30,
+			queued: 7,
+			c: &campaign{
+				currentBatchSize: 9,
+				c: Campaign{
+					QueueID:         "testQ",
+					ConcurrentCalls: 40,
+					BatchSize:       20,
+				},
+				m:           &sync.Mutex{},
+				originating: map[string]*Target{"1": &Target{}, "2": &Target{}},
+			},
+			res: 18,
+		},
+		{
+			name:   "8",
+			q:      "testQ",
+			free:   30,
+			queued: 7,
+			c: &campaign{
+				currentBatchSize: 10,
+				c: Campaign{
+					QueueID:         "testQ",
+					ConcurrentCalls: 20,
+					BatchSize:       20,
+				},
+				m:           &sync.Mutex{},
+				originating: map[string]*Target{"1": &Target{}, "2": &Target{}},
+			},
+			res: 18,
+		},
+		{
+			name:   "9",
+			q:      "testQ",
+			free:   30,
+			queued: 7,
+			c: &campaign{
+				currentBatchSize: 10,
+				c: Campaign{
+					QueueID:         "testQ",
+					ConcurrentCalls: 20,
+					BatchSize:       20,
+				},
+				m:           &sync.Mutex{},
+				originating: map[string]*Target{"1": &Target{}, "2": &Target{}},
+				answered:    map[string]*Target{"11": &Target{}},
+			},
+			res: 17,
+		},
+		{
+			name:   "10",
+			q:      "testQ",
+			free:   30,
+			queued: 7,
+			c: &campaign{
+				currentBatchSize: 10,
+				c: Campaign{
+					QueueID:         "testQ",
+					ConcurrentCalls: 20,
+					BatchSize:       20,
+				},
+				m:           &sync.Mutex{},
+				originating: map[string]*Target{"1": &Target{}, "2": &Target{}},
+				answered:    map[string]*Target{"11": &Target{}},
+				connected:   map[string]*Target{"22": &Target{}, "33": &Target{}, "44": &Target{}},
+			},
+			res: 14,
+		},
 	}
 
 	for _, v := range testData {
