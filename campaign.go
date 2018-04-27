@@ -71,23 +71,44 @@ func (c *campaign) nextAtTime(n int32, t time.Time) []*Target {
 		c.e = c.l.Front()
 	}
 
-	for e := c.e; e != nil || len(res) < int(n); e = e.Next() {
-		c.l.Remove(e)
+	eToRemove := []*list.Element{}
+	for e := c.e; e != nil && len(res) < int(n); e = e.Next() {
 		t := e.Value.(*Target)
 		if t.GetAttempts() >= c.c.GetMaxAttempts() {
+			defer func() {
+				c.l.Remove(e)
+				go emit(EventFail, *t)
+			}()
 			continue
+		}
+
+		if nat := t.GetNextAttemptTime(); nat > attemptTime {
+			c.nextAttemptTime = nat
+			// elements are sorted by NextAttempt time, so no need to find next target
+			break
 		}
 
 		t.Attempts++
 		t.LastAttemptTime = time.Now().Unix()
 		c.originating[t.GetId()] = t
 		res = append(res, t)
+		eToRemove = append(eToRemove, e)
+	}
+
+	if len(res) == 0 {
+		return res
 	}
 
 	err := db.saveManyTargets(c.c.GetId(), res)
 	if err != nil {
 		panic(err)
 	}
+
+	defer func() {
+		for _, e := range eToRemove {
+			c.l.Remove(e)
+		}
+	}()
 
 	return res
 }

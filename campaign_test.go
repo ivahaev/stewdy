@@ -701,3 +701,222 @@ func TestClearTargets(t *testing.T) {
 
 	eventHandlers = map[TargetEvent][]EventHandler{}
 }
+
+func TestNext(t *testing.T) {
+	now := time.Now()
+	testData := []struct {
+		name                      string
+		c                         *campaign
+		targets                   []*Target
+		count                     int32
+		originatingLen, targetLen int
+		res                       map[string]struct{}
+	}{
+		{
+			name: "1",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				m:               &sync.Mutex{},
+			},
+			count: 0,
+			res:   map[string]struct{}{},
+		},
+		{
+			name: "2",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				m:               &sync.Mutex{},
+			},
+			count: 2,
+			res:   map[string]struct{}{},
+		},
+		{
+			name: "3",
+			targets: []*Target{
+				&Target{Id: "T1"},
+			},
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				c: Campaign{
+					Id:          "C1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			count:          10,
+			originatingLen: 1,
+			targetLen:      0,
+			res:            map[string]struct{}{"T1": struct{}{}},
+		},
+		{
+			name: "4",
+			targets: []*Target{
+				&Target{Id: "T1"},
+				&Target{Id: "T2"},
+				&Target{Id: "T3"},
+				&Target{Id: "T4"},
+				&Target{Id: "T5"},
+			},
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				c: Campaign{
+					Id:          "C1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			count:          2,
+			originatingLen: 2,
+			targetLen:      3,
+			res:            map[string]struct{}{"T1": struct{}{}, "T2": struct{}{}},
+		},
+		{
+			name: "5",
+			targets: []*Target{
+				&Target{Id: "T1", NextAttemptTime: now.Add(time.Hour).Unix()},
+				&Target{Id: "T2"},
+				&Target{Id: "T3"},
+				&Target{Id: "T4"},
+				&Target{Id: "T5"},
+			},
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				c: Campaign{
+					Id:          "C1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			count:          2,
+			originatingLen: 2,
+			targetLen:      3,
+			res:            map[string]struct{}{"T2": struct{}{}, "T3": struct{}{}},
+		},
+		{
+			name: "6",
+			targets: []*Target{
+				&Target{Id: "T1", NextAttemptTime: now.Add(time.Hour).Unix()},
+				&Target{Id: "T2"},
+				&Target{Id: "T3", NextAttemptTime: now.Add(time.Hour).Unix()},
+				&Target{Id: "T4"},
+				&Target{Id: "T5"},
+			},
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				c: Campaign{
+					Id:          "C1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			count:          2,
+			originatingLen: 2,
+			targetLen:      3,
+			res:            map[string]struct{}{"T2": struct{}{}, "T4": struct{}{}},
+		},
+		{
+			name: "7",
+			targets: []*Target{
+				&Target{Id: "T1", NextAttemptTime: now.Add(time.Hour).Unix()},
+				&Target{Id: "T2"},
+				&Target{Id: "T3", NextAttemptTime: now.Add(time.Hour).Unix()},
+				&Target{Id: "T4", Attempts: 3},
+				&Target{Id: "T5"},
+			},
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				c: Campaign{
+					Id:          "C1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			count:          2,
+			originatingLen: 2,
+			targetLen:      2,
+			res:            map[string]struct{}{"T2": struct{}{}, "T5": struct{}{}},
+		},
+		{
+			name: "8",
+			targets: []*Target{
+				&Target{Id: "T1", NextAttemptTime: now.Add(time.Hour).Unix()},
+				&Target{Id: "T2", NextAttemptTime: now.Add(time.Hour).Unix()},
+				&Target{Id: "T3", NextAttemptTime: now.Add(time.Hour).Unix()},
+				&Target{Id: "T4", Attempts: 3},
+				&Target{Id: "T5", NextAttemptTime: now.Add(time.Hour).Unix()},
+			},
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				c: Campaign{
+					Id:          "C1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			count:          2,
+			originatingLen: 0,
+			targetLen:      4,
+			res:            map[string]struct{}{},
+		},
+		{
+			name: "9",
+			targets: []*Target{
+				&Target{Id: "T1", NextAttemptTime: now.Add(time.Hour).Unix()},
+				&Target{Id: "T2"},
+				&Target{Id: "T3", NextAttemptTime: now.Add(time.Hour).Unix()},
+				&Target{Id: "T4", Attempts: 3},
+				&Target{Id: "T5"},
+			},
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Add(time.Minute).Unix(),
+				originating:     map[string]*Target{},
+				c: Campaign{
+					Id:          "C1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			count:          2,
+			originatingLen: 0,
+			targetLen:      5,
+			res:            map[string]struct{}{},
+		},
+	}
+
+	for _, v := range testData {
+		t.Run(v.name, func(t *testing.T) {
+			c := v.c
+			c.addTargets(v.targets)
+			res := c.next(v.count)
+			if len(c.originating) != v.originatingLen {
+				t.Errorf("len(c.originating) = %d, expected %d", len(c.originating), v.originatingLen)
+			}
+			if c.l.Len() != v.targetLen {
+				t.Errorf("c.l.Len() = %d, expected %d", c.l.Len(), v.targetLen)
+			}
+			if len(res) != len(v.res) {
+				t.Fatalf("targets count = %d, expected %d", len(res), len(v.res))
+			}
+			for _, trg := range res {
+				if _, ok := v.res[trg.Id]; !ok {
+					t.Errorf("Unexpected target Id: %s in c.nextAtTime(%d, %v)", trg.Id, v.count, now)
+				}
+			}
+		})
+	}
+}
