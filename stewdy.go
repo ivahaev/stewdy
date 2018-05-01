@@ -72,6 +72,15 @@ func emit(e TargetEvent, t Target) {
 	}
 }
 
+func emitSync(e TargetEvent, t Target) {
+	eventHandlersLocker.RLock()
+	defer eventHandlersLocker.RUnlock()
+
+	for _, h := range eventHandlers[e] {
+		h(t)
+	}
+}
+
 func Setup() {
 
 }

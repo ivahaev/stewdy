@@ -6,9 +6,7 @@ import (
 )
 
 func TestOn(t *testing.T) {
-	if len(eventHandlers) != 0 {
-		t.Fatal("not emtpty eventHandlersMap")
-	}
+	eventHandlers = map[TargetEvent][]EventHandler{}
 
 	h1 := func(t Target) {}
 	h2 := func(t Target) {}

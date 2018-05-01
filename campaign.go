@@ -178,7 +178,7 @@ func (c *campaign) originateNext() {
 	}
 
 	for _, t := range targets {
-		emit(EventOriginate, *t)
+		emitSync(EventOriginate, *t)
 	}
 }
 

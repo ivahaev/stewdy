@@ -920,3 +920,166 @@ func TestNext(t *testing.T) {
 		})
 	}
 }
+
+func TestOriginate(t *testing.T) {
+	now := time.Now()
+	qName := "OriginateQ"
+	testData := []struct {
+		name         string
+		c            *campaign
+		targets      []*Target
+		free, queued int
+		res          map[string]struct{}
+	}{
+		{
+			name: "1",
+			targets: []*Target{
+				&Target{Id: "T1"},
+				&Target{Id: "T2"},
+				&Target{Id: "T3"},
+				&Target{Id: "T4"},
+				&Target{Id: "T5"},
+			},
+			free:   4,
+			queued: 0,
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				c: Campaign{
+					Id:              "C1",
+					QueueID:         qName,
+					MaxAttempts:     3,
+					ConcurrentCalls: 10,
+					Intensity:       5,
+				},
+				m: &sync.Mutex{},
+			},
+			res: map[string]struct{}{"T1": struct{}{}, "T2": struct{}{}},
+		},
+		{
+			name:    "2",
+			targets: []*Target{},
+			free:    4,
+			queued:  0,
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				c: Campaign{
+					Id:              "C1",
+					QueueID:         qName,
+					MaxAttempts:     3,
+					ConcurrentCalls: 10,
+					Intensity:       5,
+				},
+				m: &sync.Mutex{},
+			},
+			res: map[string]struct{}{},
+		},
+		{
+			name: "3",
+			targets: []*Target{
+				&Target{Id: "T1"},
+				&Target{Id: "T2"},
+				&Target{Id: "T3"},
+				&Target{Id: "T4"},
+				&Target{Id: "T5"},
+			},
+			free:   4,
+			queued: 4,
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				c: Campaign{
+					Id:              "C1",
+					QueueID:         qName,
+					MaxAttempts:     3,
+					ConcurrentCalls: 10,
+					Intensity:       5,
+				},
+				m: &sync.Mutex{},
+			},
+			res: map[string]struct{}{},
+		},
+		{
+			name: "5",
+			targets: []*Target{
+				&Target{Id: "T1"},
+				&Target{Id: "T2"},
+				&Target{Id: "T3"},
+				&Target{Id: "T4"},
+				&Target{Id: "T5"},
+			},
+			free:   0,
+			queued: 4,
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				c: Campaign{
+					Id:              "C1",
+					QueueID:         qName,
+					MaxAttempts:     3,
+					ConcurrentCalls: 10,
+					Intensity:       5,
+				},
+				m: &sync.Mutex{},
+			},
+			res: map[string]struct{}{},
+		},
+		{
+			name: "5",
+			targets: []*Target{
+				&Target{Id: "T1"},
+				&Target{Id: "T2"},
+				&Target{Id: "T3"},
+				&Target{Id: "T4"},
+				&Target{Id: "T5"},
+			},
+			free:   5,
+			queued: 0,
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{"TT1": {}, "TT2": {}, "TT3": {}, "TT4": {}, "TT5": {}, "TT6": {}, "TT7": {}, "TT8": {}, "TT9": {}, "TT0": {}},
+				c: Campaign{
+					Id:              "C1",
+					QueueID:         qName,
+					MaxAttempts:     3,
+					ConcurrentCalls: 10,
+					Intensity:       5,
+				},
+				m: &sync.Mutex{},
+			},
+			res: map[string]struct{}{},
+		},
+	}
+
+	eventHandlers = map[TargetEvent][]EventHandler{}
+	originated := map[string]struct{}{}
+	On(EventOriginate, func(t Target) {
+		originated[t.Id] = struct{}{}
+	})
+
+	for _, v := range testData {
+		t.Run(v.name, func(t *testing.T) {
+			originated = map[string]struct{}{}
+
+			c := v.c
+			c.addTargets(v.targets)
+			SetQueueStat(qName, v.free, v.queued)
+			c.originateNext()
+			if len(originated) != len(v.res) {
+				t.Fatalf("invalid originated targets %v, expected %v", originated, v.res)
+			}
+
+			for k := range originated {
+				if _, ok := v.res[k]; !ok {
+					t.Errorf("unexpected originated target ID %s", k)
+				}
+			}
+		})
+	}
+}
