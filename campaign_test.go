@@ -1083,3 +1083,260 @@ func TestOriginate(t *testing.T) {
 		})
 	}
 }
+
+func TestAnswered(t *testing.T) {
+	now := time.Now()
+	testData := []struct {
+		name               string
+		c                  *campaign
+		targetID, uniqueID string
+		err                error
+	}{
+		{
+			name:     "1",
+			targetID: "T1",
+			uniqueID: "U1",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				answered:        map[string]*Target{},
+				c: Campaign{
+					Id:          "TE1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			err: ErrNotFound,
+		},
+		{
+			name:     "2",
+			targetID: "T1",
+			uniqueID: "U1",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{"T2": {Id: "T2"}, "T3": {Id: "T3"}, "T1": {Id: "T1"}, "T5": {Id: "T5"}},
+				answered:        map[string]*Target{},
+				c: Campaign{
+					Id:          "TE1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			err: nil,
+		},
+		{
+			name:     "3",
+			targetID: "T1",
+			uniqueID: "U1",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{"T1": {Id: "T1"}},
+				answered:        map[string]*Target{},
+				c: Campaign{
+					Id:          "TE1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			err: nil,
+		},
+	}
+
+	for _, v := range testData {
+		t.Run(v.name, func(t *testing.T) {
+			c := v.c
+			campaignsm.Lock()
+			campaigns[c.c.GetId()] = v.c
+			campaignsm.Unlock()
+
+			err := Answered(v.targetID, v.uniqueID)
+			if err != v.err {
+				t.Errorf("Answered(%s, %s) = %v, expected %v", v.targetID, v.uniqueID, err, v.err)
+			}
+
+			if err == nil {
+				trg, ok := c.answered[v.uniqueID]
+				if !ok {
+					t.Fatalf("target %s is not in answered", v.targetID)
+				}
+
+				if trg.UniqueId != v.uniqueID {
+					t.Fatalf("target %s has invalid uniqueID: %s, expected: %s", v.targetID, trg.UniqueId, v.uniqueID)
+				}
+			}
+		})
+	}
+}
+
+func TestConnected(t *testing.T) {
+	now := time.Now()
+	testData := []struct {
+		name                 string
+		c                    *campaign
+		operatorID, uniqueID string
+		err                  error
+	}{
+		{
+			name:       "1",
+			operatorID: "O1",
+			uniqueID:   "U1",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				answered:        map[string]*Target{},
+				c: Campaign{
+					Id:          "TE1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			err: ErrNotFound,
+		},
+		{
+			name:       "2",
+			operatorID: "TO",
+			uniqueID:   "U1",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{"T2": {Id: "T2"}, "T3": {Id: "T3"}, "T1": {Id: "T1"}, "T5": {Id: "T5"}},
+				answered:        map[string]*Target{"T2": {Id: "T2"}, "U1": {Id: "U1"}, "T1": {Id: "T1"}, "T5": {Id: "T5"}},
+				connected:       map[string]*Target{},
+				c: Campaign{
+					Id:          "TE1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			err: nil,
+		},
+	}
+
+	for _, v := range testData {
+		t.Run(v.name, func(t *testing.T) {
+			c := v.c
+			campaignsm.Lock()
+			campaigns[c.c.GetId()] = v.c
+			campaignsm.Unlock()
+
+			err := Connected(v.uniqueID, v.operatorID)
+			if err != v.err {
+				t.Errorf("Connected(%s, %s) = %v, expected %v", v.uniqueID, v.operatorID, err, v.err)
+			}
+
+			if err == nil {
+				trg, ok := c.connected[v.uniqueID]
+				if !ok {
+					t.Fatalf("target %s is not in answered", v.operatorID)
+				}
+
+				if trg.OperatorID != v.operatorID {
+					t.Fatalf("target %s has invalid uniqueID: %s, expected: %s", v.uniqueID, trg.OperatorID, v.operatorID)
+				}
+			}
+		})
+	}
+}
+
+func TestFailed(t *testing.T) {
+	now := time.Now()
+	testData := []struct {
+		name       string
+		c          *campaign
+		targetID   string
+		shouldDrop bool
+		err        error
+	}{
+		{
+			name:     "1",
+			targetID: "T11",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				answered:        map[string]*Target{},
+				c: Campaign{
+					Id:          "TE1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			err: ErrNotFound,
+		},
+		{
+			name:     "2",
+			targetID: "T11",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{"T2": {Id: "T2"}, "T3": {Id: "T3"}, "T11": {Id: "T11"}, "T5": {Id: "T5"}},
+				answered:        map[string]*Target{},
+				connected:       map[string]*Target{},
+				c: Campaign{
+					Id:          "TE1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			err: nil,
+		},
+		{
+			name:     "3",
+			targetID: "T11",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{"T2": {Id: "T2"}, "T3": {Id: "T3"}, "T11": {Id: "T11", Attempts: 3}, "T5": {Id: "T5"}},
+				answered:        map[string]*Target{},
+				connected:       map[string]*Target{},
+				c: Campaign{
+					Id:          "TE1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			shouldDrop: true,
+			err:        nil,
+		},
+	}
+
+	for _, v := range testData {
+		t.Run(v.name, func(t *testing.T) {
+			c := v.c
+			campaignsm.Lock()
+			campaigns[c.c.GetId()] = v.c
+			campaignsm.Unlock()
+
+			err := Failed(v.targetID)
+			if err != v.err {
+				t.Errorf("Failed(%s) = %v, expected %v", v.targetID, err, v.err)
+			}
+
+			if err != nil {
+				return
+			}
+
+			e := c.l.Front()
+			if v.shouldDrop {
+				if e != nil {
+					t.Fatal("should be no targets in list")
+				}
+
+				return
+			}
+
+			if e == nil {
+				t.Fatalf("no element at front of the list")
+			}
+
+			trg := e.Value.(*Target)
+			if trg.Id != v.targetID {
+				t.Fatalf("invalid target ID %s at the front of the list, expected: %s", trg.Id, v.targetID)
+			}
+		})
+	}
+}
