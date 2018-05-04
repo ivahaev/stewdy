@@ -22,7 +22,9 @@ const (
 	EventAnswer
 	EventConnect
 	EventFail
+	EventSuccess
 	EventHangup
+	EventRemove
 )
 
 // Answered marks target as answered and sets uniqueID field.

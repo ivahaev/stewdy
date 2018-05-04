@@ -136,13 +136,13 @@ func TestUpdateCampaign(t *testing.T) {
 				return
 			}
 
-			cmp, err := db.getCampaign(d.c.GetId())
+			cmp, err := db.getCampaign(d.c.Id)
 			if err != nil {
-				t.Errorf("db.getCampaign(%s) => unexpected error: %v", d.c.GetId(), err)
+				t.Errorf("db.getCampaign(%s) => unexpected error: %v", d.c.Id, err)
 			}
 
-			if cmp.GetId() != d.c.GetId() {
-				t.Errorf("cmp.Id => %s, expected %s", cmp.GetId(), d.c.GetId())
+			if cmp.Id != d.c.Id {
+				t.Errorf("cmp.Id => %s, expected %s", cmp.Id, d.c.Id)
 			}
 
 			if cmp.GetQueueID() != d.c.GetQueueID() {
@@ -671,6 +671,7 @@ func TestClearTargets(t *testing.T) {
 		t.Run(v.name, func(t *testing.T) {
 			c := v.c
 			c.cleanTargets(now)
+			time.Sleep(100 * time.Millisecond)
 			if len(c.originating) != v.originatingCnt {
 				t.Errorf("len(c.originating) = %d, expected %d", len(c.originating), v.originatingCnt)
 			}
@@ -1149,7 +1150,7 @@ func TestAnswered(t *testing.T) {
 		t.Run(v.name, func(t *testing.T) {
 			c := v.c
 			campaignsm.Lock()
-			campaigns[c.c.GetId()] = v.c
+			campaigns[c.c.Id] = v.c
 			campaignsm.Unlock()
 
 			err := Answered(v.targetID, v.uniqueID)
@@ -1220,7 +1221,7 @@ func TestConnected(t *testing.T) {
 		t.Run(v.name, func(t *testing.T) {
 			c := v.c
 			campaignsm.Lock()
-			campaigns[c.c.GetId()] = v.c
+			campaigns[c.c.Id] = v.c
 			campaignsm.Unlock()
 
 			err := Connected(v.uniqueID, v.operatorID)
@@ -1308,7 +1309,7 @@ func TestFailed(t *testing.T) {
 		t.Run(v.name, func(t *testing.T) {
 			c := v.c
 			campaignsm.Lock()
-			campaigns[c.c.GetId()] = v.c
+			campaigns[c.c.Id] = v.c
 			campaignsm.Unlock()
 
 			err := Failed(v.targetID)
@@ -1336,6 +1337,226 @@ func TestFailed(t *testing.T) {
 			trg := e.Value.(*Target)
 			if trg.Id != v.targetID {
 				t.Fatalf("invalid target ID %s at the front of the list, expected: %s", trg.Id, v.targetID)
+			}
+		})
+	}
+}
+
+func TestHanguped(t *testing.T) {
+	now := time.Now()
+	testData := []struct {
+		name       string
+		c          *campaign
+		uniqueID   string
+		shouldDrop bool
+		err        error
+	}{
+		{
+			name:     "1",
+			uniqueID: "UN11",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				originating:     map[string]*Target{},
+				answered:        map[string]*Target{},
+				c: Campaign{
+					Id:          "HU1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			err: ErrNotFound,
+		},
+		{
+			name:     "2",
+			uniqueID: "UN11",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				answered:        map[string]*Target{"T2": {Id: "T2"}, "T3": {Id: "T3"}, "UN11": {Id: "UN11", Attempts: 3}, "T5": {Id: "T5"}},
+				connected:       map[string]*Target{},
+				c: Campaign{
+					Id:          "HU1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			shouldDrop: true,
+			err:        nil,
+		},
+		{
+			name:     "3",
+			uniqueID: "UN11",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				answered:        map[string]*Target{},
+				connected:       map[string]*Target{"T2": {Id: "T2"}, "T3": {Id: "T3"}, "UN11": {Id: "UN11", Attempts: 3}, "T5": {Id: "T5"}},
+				c: Campaign{
+					Id:          "HU1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			shouldDrop: true,
+			err:        nil,
+		},
+		{
+			name:     "4",
+			uniqueID: "UN11",
+			c: &campaign{
+				l:               list.New(),
+				nextAttemptTime: now.Unix(),
+				answered:        map[string]*Target{"T2": {Id: "T2"}, "T3": {Id: "T3"}, "UN11": {Id: "UN11", Attempts: 2}, "T5": {Id: "T5"}},
+				connected:       map[string]*Target{},
+				c: Campaign{
+					Id:          "HU1",
+					MaxAttempts: 3,
+				},
+				m: &sync.Mutex{},
+			},
+			shouldDrop: false,
+			err:        nil,
+		},
+	}
+
+	for _, v := range testData {
+		t.Run(v.name, func(t *testing.T) {
+			c := v.c
+			campaignsm.Lock()
+			campaigns[c.c.Id] = v.c
+			campaignsm.Unlock()
+
+			err := Hanguped(v.uniqueID)
+			if err != v.err {
+				t.Errorf("Hanguped(%s) = %v, expected %v", v.uniqueID, err, v.err)
+			}
+
+			if err != nil {
+				return
+			}
+
+			e := c.l.Front()
+			if v.shouldDrop {
+				if e != nil {
+					t.Fatal("should be no targets in list")
+				}
+
+				return
+			}
+
+			if e == nil {
+				t.Fatalf("no element at front of the list")
+			}
+		})
+	}
+}
+
+func TestRemoveTarget(t *testing.T) {
+	testData := []struct {
+		name                 string
+		c                    *campaign
+		campaignID, targetID string
+		targets              []*Target
+		emit                 bool
+	}{
+		{
+			name: "1",
+			c: &campaign{
+				l: list.New(),
+				c: Campaign{
+					Id: "CMPR1",
+				},
+				m: &sync.Mutex{},
+			},
+			campaignID: "CCC1",
+			targetID:   "TTT1",
+			emit:       false,
+		},
+		{
+			name: "2",
+			c: &campaign{
+				l: list.New(),
+				c: Campaign{
+					Id: "CMPR1",
+				},
+				m: &sync.Mutex{},
+			},
+			campaignID: "CMPR1",
+			targetID:   "TTT1",
+			targets:    []*Target{{Id: "TRG1"}, {Id: "TTT1"}, {Id: "TRG2"}},
+			emit:       true,
+		},
+		{
+			name: "3",
+			c: &campaign{
+				l: list.New(),
+				c: Campaign{
+					Id: "CMPR1",
+				},
+				connected: map[string]*Target{"TRG1": {Id: "TRG1"}, "TTT1": {Id: "TTT1"}, "TRG2": {Id: "TRG2"}},
+				m:         &sync.Mutex{},
+			},
+			campaignID: "CMPR1",
+			targetID:   "TTT1",
+			emit:       true,
+		},
+		{
+			name: "4",
+			c: &campaign{
+				l: list.New(),
+				c: Campaign{
+					Id: "CMPR1",
+				},
+				answered: map[string]*Target{"TRG1": {Id: "TRG1"}, "TTT1": {Id: "TTT1"}, "TRG2": {Id: "TRG2"}},
+				m:        &sync.Mutex{},
+			},
+			campaignID: "CMPR1",
+			targetID:   "TTT1",
+			emit:       true,
+		},
+		{
+			name: "5",
+			c: &campaign{
+				l: list.New(),
+				c: Campaign{
+					Id: "CMPR1",
+				},
+				originating: map[string]*Target{"TRG1": {Id: "TRG1"}, "TTT1": {Id: "TTT1"}, "TRG2": {Id: "TRG2"}},
+				m:           &sync.Mutex{},
+			},
+			campaignID: "CMPR1",
+			targetID:   "TTT1",
+			emit:       true,
+		},
+	}
+
+	eventHandlers = map[TargetEvent][]EventHandler{}
+	removedTargets := map[string]Target{}
+	On(EventRemove, func(t Target) {
+		removedTargets[t.Id] = t
+	})
+
+	for _, v := range testData {
+		t.Run(v.name, func(t *testing.T) {
+			c := v.c
+			campaignsm.Lock()
+			campaigns[c.c.Id] = v.c
+			campaignsm.Unlock()
+
+			c.addTargets(v.targets)
+
+			removedTargets = map[string]Target{}
+			RemoveTarget(v.campaignID, v.targetID)
+			time.Sleep(100 * time.Millisecond)
+
+			trg, ok := removedTargets[v.targetID]
+			if v.emit && (!ok || trg.Id != v.targetID) {
+				t.Fatal("no target emited with EventRemove")
+			}
+
+			if !v.emit && len(removedTargets) > 0 {
+				t.Fatal("no targets should be emited with EventRemove")
 			}
 		})
 	}

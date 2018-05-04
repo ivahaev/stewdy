@@ -75,10 +75,10 @@ func (c *campaign) nextAtTime(n int32, t time.Time) []*Target {
 	for e := c.e; e != nil && len(res) < int(n); e = e.Next() {
 		t := e.Value.(*Target)
 		if t.GetAttempts() >= c.c.GetMaxAttempts() {
-			defer func() {
+			defer func(t Target, e *list.Element) {
 				c.l.Remove(e)
-				go emit(EventFail, *t)
-			}()
+				go emit(EventFail, t)
+			}(*t, e)
 			continue
 		}
 
@@ -224,7 +224,11 @@ func (c *campaign) cleanTargets(now time.Time) {
 		if v.LastAttemptTime <= failedTime {
 			delete(c.originating, k)
 			if v.Attempts >= c.c.GetMaxAttempts() {
-				go emit(EventFail, *v)
+				go func(t Target) {
+					emit(EventFail, t)
+					emit(EventRemove, t)
+				}(*v)
+
 				deleted = append(deleted, v.GetId())
 				continue
 			}
@@ -240,7 +244,11 @@ func (c *campaign) cleanTargets(now time.Time) {
 		if v.AnswerTime <= notConnectedTime {
 			delete(c.answered, k)
 			if v.Attempts >= c.c.GetMaxAttempts() {
-				go emit(EventFail, *v)
+				go func(t Target) {
+					emit(EventFail, t)
+					emit(EventRemove, t)
+				}(*v)
+
 				deleted = append(deleted, v.GetId())
 				continue
 			}
@@ -287,8 +295,11 @@ func answered(targetID, uniqueID string) error {
 
 	delete(c.originating, targetID)
 	t.UniqueId = uniqueID
-	go emit(EventAnswer, *t)
 	c.answered[uniqueID] = t
+	go func(t Target) {
+		emit(EventAnswer, t)
+		emit(EventSuccess, t)
+	}(*t)
 
 	err := db.save(c.c.GetId(), t)
 	if err != nil {
@@ -340,7 +351,11 @@ func failed(targetID string) error {
 
 	delete(c.originating, targetID)
 	if t.Attempts >= c.c.GetMaxAttempts() {
-		go emit(EventFail, *t)
+		go func(t Target) {
+			go emit(EventFail, t)
+			go emit(EventRemove, t)
+		}(*t)
+
 		db.delete(c.c.GetId(), t.GetId())
 		return nil
 	}
@@ -380,6 +395,10 @@ func findCampaignByUniqueID(uniqueID string) (*campaign, bool) {
 		if _, ok := c.answered[uniqueID]; ok {
 			return c, true
 		}
+
+		if _, ok := c.connected[uniqueID]; ok {
+			return c, true
+		}
 	}
 
 	return nil, false
@@ -397,10 +416,11 @@ func hanguped(uniqueID string) error {
 	t, ok := c.answered[uniqueID]
 	if ok {
 		if t.Attempts >= c.c.GetMaxAttempts() {
-			go func() {
-				emit(EventHangup, *t)
-				emit(EventFail, *t)
-			}()
+			go func(t Target) {
+				emit(EventHangup, t)
+				emit(EventFail, t)
+				emit(EventRemove, t)
+			}(*t)
 			db.delete(c.c.GetId(), t.GetId())
 
 			return nil
@@ -423,7 +443,12 @@ func hanguped(uniqueID string) error {
 		return ErrNotFound
 	}
 
-	go emit(EventHangup, *t)
+	delete(c.connected, uniqueID)
+
+	go func(t Target) {
+		emit(EventHangup, t)
+		emit(EventRemove, t)
+	}(*t)
 
 	return nil
 }
@@ -571,20 +596,54 @@ func AddTargets(campaignID string, targets []*Target) error {
 
 func RemoveTarget(campaignID, targetID string) {
 	campaignsm.Lock()
-	defer campaignsm.Unlock()
-
 	c, ok := campaigns[campaignID]
 	if !ok {
+		campaignsm.Unlock()
+		return
+	}
+	campaignsm.Unlock()
+
+	var trg *Target
+	c.m.Lock()
+	defer func() {
+		c.m.Unlock()
+		if trg != nil {
+			db.delete(campaignID, targetID)
+			go emit(EventRemove, *trg)
+		}
+	}()
+
+	if t, ok := c.originating[targetID]; ok {
+		delete(c.originating, targetID)
+		trg = t
+
 		return
 	}
 
-	delete(c.originating, targetID)
+	for k, v := range c.answered {
+		if v.Id == targetID {
+			delete(c.answered, k)
+			trg = v
+
+			return
+		}
+	}
+
+	for k, v := range c.connected {
+		if v.Id == targetID {
+			delete(c.connected, k)
+			trg = v
+
+			return
+		}
+	}
 
 	for e := c.l.Front(); e != nil; e = e.Next() {
 		t := e.Value.(*Target)
 		if t.GetId() == targetID {
 			c.l.Remove(e)
-			db.delete(campaignID, targetID)
+			trg = t
+
 			return
 		}
 	}
