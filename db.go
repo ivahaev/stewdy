@@ -29,6 +29,8 @@ type idGetter interface {
 	GetId() string
 }
 
+// Init open database with fileName provided. If file does not exists, creates it.
+// If any error occured, will panic.
 func Init(fileName string) {
 	if len(fileName) == 0 {
 		fileName = "./stewdy.db"

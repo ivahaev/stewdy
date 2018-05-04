@@ -4,9 +4,9 @@ package stewdy
 
 import "strconv"
 
-const _TargetEvent_name = "EventOriginateEventAnswerEventConnectEventFail"
+const _TargetEvent_name = "EventOriginateEventAnswerEventConnectEventFailEventSuccessEventHangupEventRemove"
 
-var _TargetEvent_index = [...]uint8{0, 14, 25, 37, 46}
+var _TargetEvent_index = [...]uint8{0, 14, 25, 37, 46, 58, 69, 80}
 
 func (i TargetEvent) String() string {
 	i -= 1

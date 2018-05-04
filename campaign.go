@@ -15,10 +15,144 @@ var (
 	campaignsm sync.RWMutex
 )
 
+// Campaigns errors
 var (
 	ErrNoQID          = errors.New("no queue id provided")
 	ErrEmptyTimeTable = errors.New("timetable is empty")
 )
+
+// AddTargets adds targets for campaign to campaign's targets list.
+// Returns error if campaign is not found, or db error occured.
+func AddTargets(campaignID string, targets []*Target) error {
+	campaignsm.Lock()
+	c, ok := campaigns[campaignID]
+	campaignsm.Unlock()
+	if !ok {
+		return ErrNotFound
+	}
+
+	for _, v := range targets {
+		v.CampaignID = campaignID
+		v.LastAttemptTime = 0
+		v.Attempts = 0
+		v.UniqueId = ""
+	}
+
+	err := db.saveManyTargets(campaignID, targets)
+	if err != nil {
+		return err
+	}
+
+	c.addTargets(targets)
+
+	return nil
+}
+
+// RemoveTarget removes target with targetID for campaignID.
+// If no campaign found or no target found does nothing.
+func RemoveTarget(campaignID, targetID string) {
+	campaignsm.Lock()
+	c, ok := campaigns[campaignID]
+	if !ok {
+		campaignsm.Unlock()
+		return
+	}
+	campaignsm.Unlock()
+
+	var trg *Target
+	c.m.Lock()
+	defer func() {
+		c.m.Unlock()
+		if trg != nil {
+			db.delete(campaignID, targetID)
+			go emit(EventRemove, *trg)
+		}
+	}()
+
+	if t, ok := c.originating[targetID]; ok {
+		delete(c.originating, targetID)
+		trg = t
+
+		return
+	}
+
+	for k, v := range c.answered {
+		if v.Id == targetID {
+			delete(c.answered, k)
+			trg = v
+
+			return
+		}
+	}
+
+	for k, v := range c.connected {
+		if v.Id == targetID {
+			delete(c.connected, k)
+			trg = v
+
+			return
+		}
+	}
+
+	for e := c.l.Front(); e != nil; e = e.Next() {
+		t := e.Value.(*Target)
+		if t.GetId() == targetID {
+			c.l.Remove(e)
+			trg = t
+
+			return
+		}
+	}
+}
+
+// UpdateCampaign updates campaign settings passed as argument. If campaign is now exists, will create it.
+// Returns error if no queue id in campaign, if invalid timetable, or db error occured.
+func UpdateCampaign(c Campaign) error {
+	if len(c.QueueID) == 0 {
+		return ErrNoQID
+	}
+
+	if err := validateTimetable(c); err != nil {
+		return err
+	}
+
+	err := db.saveCampaign(c)
+	if err != nil {
+		return err
+	}
+
+	campaignsm.Lock()
+	cmp, ok := campaigns[c.GetId()]
+	if !ok {
+		cmp = &campaign{
+			c:              c,
+			l:              list.New(),
+			originating:    map[string]*Target{},
+			waitForAnswer:  time.Minute,
+			waitForConnect: time.Hour,
+			waitForHangup:  time.Hour,
+			m:              &sync.Mutex{},
+		}
+
+		if c.WaitForAnswer > 0 {
+			cmp.waitForAnswer = time.Duration(c.WaitForAnswer) * time.Second
+		}
+		if c.WaitForConnect > 0 {
+			cmp.waitForConnect = time.Duration(c.WaitForConnect) * time.Second
+		}
+		if c.MaxCallDuration > 0 {
+			cmp.waitForHangup = time.Duration(c.MaxCallDuration) * time.Second
+		}
+
+		campaigns[c.GetId()] = cmp
+		go cmp.targetsCleaner()
+	}
+	campaignsm.Unlock()
+
+	cmp.c = c
+
+	return nil
+}
 
 type campaign struct {
 	c                Campaign
@@ -453,6 +587,25 @@ func hanguped(uniqueID string) error {
 	return nil
 }
 
+func targetsLen(campaignID string) (int, error) {
+	campaignsm.RLock()
+	c, ok := campaigns[campaignID]
+	if !ok {
+		campaignsm.RUnlock()
+		return 0, ErrNotFound
+	}
+	campaignsm.RUnlock()
+
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	res := c.l.Len()
+	res += len(c.originating)
+	res += len(c.answered)
+
+	return res, nil
+}
+
 func validateTimetable(c Campaign) error {
 	if len(c.TimeTable) == 0 {
 		return ErrEmptyTimeTable
@@ -520,131 +673,4 @@ func isTimeOverlaped(start1, stop1, start2, stop2 int32) bool {
 	}
 
 	return start1 < stop2
-}
-
-func UpdateCampaign(c Campaign) error {
-	if len(c.QueueID) == 0 {
-		return ErrNoQID
-	}
-
-	if err := validateTimetable(c); err != nil {
-		return err
-	}
-
-	err := db.saveCampaign(c)
-	if err != nil {
-		return err
-	}
-
-	campaignsm.Lock()
-	cmp, ok := campaigns[c.GetId()]
-	if !ok {
-		cmp = &campaign{
-			c:              c,
-			l:              list.New(),
-			originating:    map[string]*Target{},
-			waitForAnswer:  time.Minute,
-			waitForConnect: time.Hour,
-			waitForHangup:  time.Hour,
-			m:              &sync.Mutex{},
-		}
-
-		if c.WaitForAnswer > 0 {
-			cmp.waitForAnswer = time.Duration(c.WaitForAnswer) * time.Second
-		}
-		if c.WaitForConnect > 0 {
-			cmp.waitForConnect = time.Duration(c.WaitForConnect) * time.Second
-		}
-		if c.MaxCallDuration > 0 {
-			cmp.waitForHangup = time.Duration(c.MaxCallDuration) * time.Second
-		}
-
-		campaigns[c.GetId()] = cmp
-		go cmp.targetsCleaner()
-	}
-	campaignsm.Unlock()
-
-	cmp.c = c
-
-	return nil
-}
-
-func AddTargets(campaignID string, targets []*Target) error {
-	campaignsm.Lock()
-	c, ok := campaigns[campaignID]
-	campaignsm.Unlock()
-	if !ok {
-		return ErrNotFound
-	}
-
-	for _, v := range targets {
-		v.CampaignID = campaignID
-		v.LastAttemptTime = 0
-		v.Attempts = 0
-		v.UniqueId = ""
-	}
-
-	err := db.saveManyTargets(campaignID, targets)
-	if err != nil {
-		return err
-	}
-
-	c.addTargets(targets)
-
-	return nil
-}
-
-func RemoveTarget(campaignID, targetID string) {
-	campaignsm.Lock()
-	c, ok := campaigns[campaignID]
-	if !ok {
-		campaignsm.Unlock()
-		return
-	}
-	campaignsm.Unlock()
-
-	var trg *Target
-	c.m.Lock()
-	defer func() {
-		c.m.Unlock()
-		if trg != nil {
-			db.delete(campaignID, targetID)
-			go emit(EventRemove, *trg)
-		}
-	}()
-
-	if t, ok := c.originating[targetID]; ok {
-		delete(c.originating, targetID)
-		trg = t
-
-		return
-	}
-
-	for k, v := range c.answered {
-		if v.Id == targetID {
-			delete(c.answered, k)
-			trg = v
-
-			return
-		}
-	}
-
-	for k, v := range c.connected {
-		if v.Id == targetID {
-			delete(c.connected, k)
-			trg = v
-
-			return
-		}
-	}
-
-	for e := c.l.Front(); e != nil; e = e.Next() {
-		t := e.Value.(*Target)
-		if t.GetId() == targetID {
-			c.l.Remove(e)
-			trg = t
-
-			return
-		}
-	}
 }
