@@ -1,5 +1,9 @@
 # stewdy
 
+[![Stewdy](https://img.shields.io/badge/stewdy-alpha-lightgrey.svg)](https://github.com/ivahaev/stewdy)
+[![Build Status](https://travis-ci.org/ivahaev/stewdy.svg?branch=master)](https://travis-ci.org/ivahaev/stewdy)
+[![License](https://img.shields.io/badge/license-MIT%20v3-blue.svg)](https://github.com/ivahaev/stewdy/blob/master/LICENSE)
+
 Stupid dialer library written on Go
 
 This is an attempt to create library for making dialers with any call targets sources and any PBX.
