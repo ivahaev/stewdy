@@ -145,6 +145,7 @@ func UpdateCampaign(c Campaign) error {
 		}
 
 		campaigns[c.GetId()] = cmp
+		go cmp.originator()
 		go cmp.targetsCleaner()
 	}
 	campaignsm.Unlock()
@@ -206,13 +207,20 @@ func (c *campaign) nextAtTime(n int32, t time.Time) []*Target {
 	}
 
 	eToRemove := []*list.Element{}
-	for e := c.e; e != nil && len(res) < int(n); e = e.Next() {
+	defer func() {
+		for _, e := range eToRemove {
+			c.l.Remove(e)
+		}
+	}()
+
+	for ; c.e != nil && len(res) < int(n); c.e = c.e.Next() {
+		e := c.e
 		t := e.Value.(*Target)
 		if t.GetAttempts() >= c.c.GetMaxAttempts() {
-			defer func(t Target, e *list.Element) {
-				c.l.Remove(e)
+			eToRemove = append(eToRemove, e)
+			defer func(t Target) {
 				go emit(EventFail, t)
-			}(*t, e)
+			}(*t)
 			continue
 		}
 
@@ -237,12 +245,6 @@ func (c *campaign) nextAtTime(n int32, t time.Time) []*Target {
 	if err != nil {
 		panic(err)
 	}
-
-	defer func() {
-		for _, e := range eToRemove {
-			c.l.Remove(e)
-		}
-	}()
 
 	return res
 }
