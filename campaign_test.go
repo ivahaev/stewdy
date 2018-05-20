@@ -338,7 +338,7 @@ func TestFreeSlots(t *testing.T) {
 				c: Campaign{
 					QueueID:         "testQ",
 					ConcurrentCalls: 40,
-					BatchSize:       20,
+					Intensity:       20,
 				},
 				m: &sync.Mutex{},
 			},
@@ -354,7 +354,7 @@ func TestFreeSlots(t *testing.T) {
 				c: Campaign{
 					QueueID:         "testQ",
 					ConcurrentCalls: 40,
-					BatchSize:       20,
+					Intensity:       20,
 				},
 				m: &sync.Mutex{},
 			},
@@ -370,7 +370,7 @@ func TestFreeSlots(t *testing.T) {
 				c: Campaign{
 					QueueID:         "testQ",
 					ConcurrentCalls: 40,
-					BatchSize:       20,
+					Intensity:       20,
 				},
 				m: &sync.Mutex{},
 			},
@@ -386,7 +386,7 @@ func TestFreeSlots(t *testing.T) {
 				c: Campaign{
 					QueueID:         "testQ",
 					ConcurrentCalls: 40,
-					BatchSize:       20,
+					Intensity:       20,
 				},
 				m: &sync.Mutex{},
 			},
@@ -402,7 +402,7 @@ func TestFreeSlots(t *testing.T) {
 				c: Campaign{
 					QueueID:         "testQ",
 					ConcurrentCalls: 40,
-					BatchSize:       20,
+					Intensity:       20,
 				},
 				m: &sync.Mutex{},
 			},
@@ -418,7 +418,7 @@ func TestFreeSlots(t *testing.T) {
 				c: Campaign{
 					QueueID:         "unknownQ",
 					ConcurrentCalls: 40,
-					BatchSize:       20,
+					Intensity:       20,
 				},
 				m: &sync.Mutex{},
 			},
@@ -434,7 +434,7 @@ func TestFreeSlots(t *testing.T) {
 				c: Campaign{
 					QueueID:         "testQ",
 					ConcurrentCalls: 40,
-					BatchSize:       20,
+					Intensity:       20,
 				},
 				m:           &sync.Mutex{},
 				originating: map[string]*Target{"1": &Target{}, "2": &Target{}},
@@ -451,7 +451,7 @@ func TestFreeSlots(t *testing.T) {
 				c: Campaign{
 					QueueID:         "testQ",
 					ConcurrentCalls: 20,
-					BatchSize:       20,
+					Intensity:       20,
 				},
 				m:           &sync.Mutex{},
 				originating: map[string]*Target{"1": &Target{}, "2": &Target{}},
@@ -468,7 +468,7 @@ func TestFreeSlots(t *testing.T) {
 				c: Campaign{
 					QueueID:         "testQ",
 					ConcurrentCalls: 20,
-					BatchSize:       20,
+					Intensity:       20,
 				},
 				m:           &sync.Mutex{},
 				originating: map[string]*Target{"1": &Target{}, "2": &Target{}},
@@ -486,7 +486,7 @@ func TestFreeSlots(t *testing.T) {
 				c: Campaign{
 					QueueID:         "testQ",
 					ConcurrentCalls: 20,
-					BatchSize:       20,
+					Intensity:       20,
 				},
 				m:           &sync.Mutex{},
 				originating: map[string]*Target{"1": &Target{}, "2": &Target{}},

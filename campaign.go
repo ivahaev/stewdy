@@ -312,8 +312,8 @@ func (c *campaign) calcBatchSize(max int32) int32 {
 		c.currentBatchSize = max
 	}
 
-	if c.c.BatchSize > 0 && c.currentBatchSize > c.c.BatchSize {
-		c.currentBatchSize = c.c.BatchSize
+	if c.c.Intensity > 0 && c.currentBatchSize > c.c.Intensity {
+		c.currentBatchSize = c.c.Intensity
 	}
 
 	return c.currentBatchSize
@@ -611,6 +611,18 @@ func hanguped(uniqueID string) error {
 	}(*t)
 
 	return nil
+}
+
+func nextAttemptTime(campaignID string) (time.Time, error) {
+	campaignsm.RLock()
+	c, ok := campaigns[campaignID]
+	if !ok {
+		campaignsm.RUnlock()
+		return time.Time{}, ErrNotFound
+	}
+	campaignsm.RUnlock()
+
+	return time.Unix(c.nextAttemptTime, 0), nil
 }
 
 func targetsLen(campaignID string) (int, error) {
