@@ -40,4 +40,5 @@ message target {
     string operatorID = 10;
     int64 answerTime = 11;
     int64 connectTime = 12;
+    int64 hangupTime = 13;
 }

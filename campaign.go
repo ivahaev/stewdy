@@ -31,11 +31,16 @@ func AddTargets(campaignID string, targets []*Target) error {
 		return ErrNotFound
 	}
 
+	now := time.Now().Unix()
 	for _, v := range targets {
 		v.CampaignID = campaignID
 		v.LastAttemptTime = 0
 		v.Attempts = 0
 		v.UniqueId = ""
+
+		if v.NextAttemptTime == 0 {
+			v.NextAttemptTime = now
+		}
 	}
 
 	err := db.saveManyTargets(campaignID, targets)
@@ -46,6 +51,22 @@ func AddTargets(campaignID string, targets []*Target) error {
 	c.addTargets(targets)
 
 	return nil
+}
+
+// GetCampaignByID returns campaign by id.
+func GetCampaignByID(id string) (Campaign, error) {
+	campaignsm.Lock()
+	c, ok := campaigns[id]
+	campaignsm.Unlock()
+
+	if !ok {
+		return Campaign{}, ErrNotFound
+	}
+
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	return c.c, nil
 }
 
 // RemoveTarget removes target with targetID for campaignID.
@@ -128,6 +149,8 @@ func UpdateCampaign(c Campaign) error {
 			c:              c,
 			l:              list.New(),
 			originating:    map[string]*Target{},
+			answered:       map[string]*Target{},
+			connected:      map[string]*Target{},
 			waitForAnswer:  time.Minute,
 			waitForConnect: time.Hour,
 			waitForHangup:  time.Hour,
@@ -260,7 +283,12 @@ func (c *campaign) freeSlots() int32 {
 	defer c.m.Unlock()
 
 	currentCalls := int32(len(c.originating) + len(c.answered) + len(c.connected))
-	freeSlots := c.c.ConcurrentCalls - currentCalls
+	freeSlots := c.c.ConcurrentCalls
+	if freeSlots > qFreeSlots {
+		freeSlots = qFreeSlots
+	}
+
+	freeSlots = freeSlots - currentCalls
 	if freeSlots <= 0 {
 		c.calcBatchSize(0)
 		return 0
@@ -268,10 +296,6 @@ func (c *campaign) freeSlots() int32 {
 
 	if c.c.Intensity > 0 && freeSlots > c.c.Intensity {
 		freeSlots = c.c.Intensity
-	}
-
-	if freeSlots > qFreeSlots {
-		freeSlots = qFreeSlots
 	}
 
 	return c.calcBatchSize(freeSlots)

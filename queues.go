@@ -1,6 +1,8 @@
 package stewdy
 
-import "sync"
+import (
+	"sync"
+)
 
 var (
 	queues       = map[string]queue{}
