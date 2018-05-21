@@ -152,6 +152,71 @@ func TestUpdateCampaign(t *testing.T) {
 	}
 }
 
+func TestIsActive(t *testing.T) {
+	now := time.Now()
+	minutes := int32(now.Hour()*60 + now.Minute())
+	weekday := now.Weekday()
+	invalidWeekday := weekday + 1
+	if invalidWeekday > 6 {
+		invalidWeekday = 0
+	}
+
+	testData := []struct {
+		name string
+		c    *campaign
+		res  bool
+	}{
+		{
+			name: "active",
+			c: &campaign{
+				m: &sync.Mutex{},
+				c: Campaign{
+					IsActive: true,
+					TimeTable: []*Schedule{
+						{Weekday: int32(now.Weekday()), Start: minutes, Stop: minutes + 2},
+					},
+				},
+			},
+			res: true,
+		},
+		{
+			name: "invactive",
+			c: &campaign{
+				m: &sync.Mutex{},
+				c: Campaign{
+					IsActive: true,
+					TimeTable: []*Schedule{
+						{Weekday: int32(invalidWeekday), Start: minutes, Stop: minutes + 2},
+					},
+				},
+			},
+			res: false,
+		},
+		{
+			name: "invactive prop",
+			c: &campaign{
+				m: &sync.Mutex{},
+				c: Campaign{
+					IsActive: false,
+					TimeTable: []*Schedule{
+						{Weekday: int32(now.Weekday()), Start: minutes, Stop: minutes + 2},
+					},
+				},
+			},
+			res: false,
+		},
+	}
+
+	for _, v := range testData {
+		t.Run(v.name, func(t *testing.T) {
+			res := v.c.isActive(now)
+			if res != v.res {
+				t.Errorf("c.isActive(now) => %t, expected %t", res, v.res)
+			}
+		})
+	}
+}
+
 func TestOverlaping(t *testing.T) {
 	testData := []struct {
 		s1  *Schedule
@@ -216,6 +281,11 @@ func TestOverlaping(t *testing.T) {
 		{
 			s1:  &Schedule{Weekday: 0, Start: 400, Stop: 500},
 			s2:  &Schedule{Weekday: 6, Start: 800, Stop: 600},
+			res: true,
+		},
+		{
+			s1:  &Schedule{Weekday: 0, Start: 400, Stop: 500},
+			s2:  &Schedule{Weekday: 0, Start: 499, Stop: 500},
 			res: true,
 		},
 	}

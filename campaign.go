@@ -322,6 +322,32 @@ func (c *campaign) calcBatchSize(max int32) int32 {
 	return c.currentBatchSize
 }
 
+func (c *campaign) isActive(t time.Time) bool {
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	if !c.c.IsActive {
+		return false
+	}
+
+	weekday := t.Weekday()
+	minutes := 60*t.Hour() + t.Minute()
+	sch := &Schedule{
+		Id:      "now",
+		Weekday: int32(weekday),
+		Start:   int32(minutes),
+		Stop:    int32(minutes + 1),
+	}
+
+	for _, v := range c.c.TimeTable {
+		if isOverlaped(sch, v) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (c *campaign) originator() {
 	ticker := time.NewTicker(time.Second)
 	for range ticker.C {
@@ -444,6 +470,21 @@ func (c *campaign) cleanTargets(now time.Time) {
 	if len(deleted) > 0 {
 		db.deleteMany(c.c.GetId(), deleted)
 	}
+}
+
+func activeCampaigns() []string {
+	campaignsm.RLock()
+	defer campaignsm.RUnlock()
+
+	now := time.Now()
+	res := []string{}
+	for _, v := range campaigns {
+		if v.isActive(now) {
+			res = append(res, v.c.Id)
+		}
+	}
+
+	return res
 }
 
 func answered(targetID, uniqueID string) error {
