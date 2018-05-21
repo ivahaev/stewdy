@@ -381,7 +381,7 @@ func (c *campaign) sort() {
 
 	sort.Slice(targets, func(i, j int) bool {
 		if targets[i].Attempts == targets[j].Attempts {
-		return targets[i].GetNextAttemptTime() < targets[j].GetNextAttemptTime()
+			return targets[i].GetNextAttemptTime() < targets[j].GetNextAttemptTime()
 		}
 
 		return targets[i].Attempts < targets[j].Attempts
@@ -472,15 +472,15 @@ func (c *campaign) cleanTargets(now time.Time) {
 	}
 }
 
-func activeCampaigns() []string {
+func activeCampaigns() []Campaign {
 	campaignsm.RLock()
 	defer campaignsm.RUnlock()
 
 	now := time.Now()
-	res := []string{}
+	res := []Campaign{}
 	for _, v := range campaigns {
 		if v.isActive(now) {
-			res = append(res, v.c.Id)
+			res = append(res, v.c)
 		}
 	}
 
