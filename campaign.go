@@ -255,6 +255,9 @@ func (c *campaign) nextAtTime(n int32, t time.Time) []*Target {
 
 		t.Attempts++
 		t.LastAttemptTime = time.Now().Unix()
+		t.AnswerTime = 0
+		t.ConnectTime = 0
+		t.HangupTime = 0
 		c.originating[t.GetId()] = t
 		res = append(res, t)
 		eToRemove = append(eToRemove, e)
@@ -351,7 +354,11 @@ func (c *campaign) sort() {
 	}
 
 	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].Attempts == targets[j].Attempts {
 		return targets[i].GetNextAttemptTime() < targets[j].GetNextAttemptTime()
+		}
+
+		return targets[i].Attempts < targets[j].Attempts
 	})
 
 	c.l.Init()
@@ -485,6 +492,7 @@ func connected(uniqueID, operatorID string) error {
 
 	delete(c.answered, uniqueID)
 	t.OperatorID = operatorID
+	t.ConnectTime = time.Now().Unix()
 	go emit(EventConnect, *t)
 	c.connected[uniqueID] = t
 	err := db.save(c.c.GetId(), t)
@@ -575,6 +583,7 @@ func hanguped(uniqueID string) error {
 
 	t, ok := c.answered[uniqueID]
 	if ok {
+		t.HangupTime = time.Now().Unix()
 		if t.Attempts >= c.c.GetMaxAttempts() {
 			go func(t Target) {
 				emit(EventHangup, t)
@@ -604,6 +613,7 @@ func hanguped(uniqueID string) error {
 	}
 
 	delete(c.connected, uniqueID)
+	t.HangupTime = time.Now().Unix()
 
 	go func(t Target) {
 		emit(EventHangup, t)

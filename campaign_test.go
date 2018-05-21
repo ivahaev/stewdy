@@ -846,7 +846,7 @@ func TestNext(t *testing.T) {
 			},
 			count:          2,
 			originatingLen: 2,
-			targetLen:      2,
+			targetLen:      3,
 			res:            map[string]struct{}{"T2": struct{}{}, "T5": struct{}{}},
 		},
 		{
@@ -870,7 +870,7 @@ func TestNext(t *testing.T) {
 			},
 			count:          2,
 			originatingLen: 0,
-			targetLen:      4,
+			targetLen:      5,
 			res:            map[string]struct{}{},
 		},
 		{
